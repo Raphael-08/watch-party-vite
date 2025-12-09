@@ -583,7 +583,7 @@ export default function SettingsPanel() {
           <div className="space-y-2">
             <Label htmlFor="region" className="text-sm font-medium flex items-center gap-2">
               Server Region
-              {!useProductionKey && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Testing</Badge>}
+              {!useProductionKey && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Test Mode</Badge>}
             </Label>
             <Select
               value={hyperbeamSettings.region}
@@ -779,15 +779,40 @@ export default function SettingsPanel() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Version</span>
-            <Badge variant="secondary" className="text-xs">2.0.0</Badge>
+            <Badge variant="secondary" className="text-xs">1.1.5</Badge>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Built with</span>
-            <Badge variant="outline" className="text-xs">Next.js + shadcn/ui</Badge>
+            <Badge variant="outline" className="text-xs">React + Vite + shadcn/ui</Badge>
           </div>
           <p className="text-xs text-muted-foreground pt-2 leading-relaxed">
             Watch videos together in perfect sync with friends. Powered by Hyperbeam.
           </p>
+
+          {/* Debug/Update Buttons */}
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => {
+                if (window.electron) {
+                  window.electron.send('check-updates');
+                  console.log('Manual update check triggered');
+                }
+              }}
+              className="flex-1 px-3 py-2 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Check for Updates
+            </button>
+            <button
+              onClick={() => {
+                if (window.electron) {
+                  window.electron.send('open-logs');
+                }
+              }}
+              className="flex-1 px-3 py-2 text-xs bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
+            >
+              Open Logs
+            </button>
+          </div>
         </div>
       </div>
       </div>

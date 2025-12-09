@@ -8,14 +8,53 @@ dotenv.config();
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
-// Configure auto-updater
-autoUpdater.autoDownload = true; // Auto-download updates (Discord-style)
-autoUpdater.autoInstallOnAppQuit = false; // We'll handle install manually
+// Configure auto-updater (Discord-style silent updates)
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.allowPrerelease = false;
+
+// Enable verbose logging to see what's happening
+const log = require('electron-log');
+autoUpdater.logger = log;
+log.transports.file.level = 'debug';
+log.transports.console.level = 'debug';
+
+console.log('[AutoUpdater] =================================================');
+console.log('[AutoUpdater] Initializing electron-updater');
+console.log('[AutoUpdater] Current app version:', app.getVersion());
+console.log('[AutoUpdater] Is packaged:', app.isPackaged);
+console.log('[AutoUpdater] Platform:', process.platform);
+console.log('[AutoUpdater] =================================================');
+
+// IMPORTANT: For private GitHub repositories, electron-updater needs authentication
+// Use the valid token from .env file
+const GITHUB_TOKEN = process.env.GH_TOKEN || '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';
+
+// Configure GitHub provider with authentication for private repository
+if (GITHUB_TOKEN) {
+  // Set up GitHub provider with token
+  autoUpdater.requestHeaders = {
+    'Authorization': `token ${GITHUB_TOKEN}`
+  };
+
+  // Configure to use GitHub API instead of releases.atom for private repos
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'Raphael-08',
+    repo: 'watch-party-vite',
+    private: true,
+    token: GITHUB_TOKEN
+  });
+
+  console.log('[AutoUpdater] ✓ GitHub provider configured with authentication');
+  console.log('[AutoUpdater] ✓ Private repository mode enabled');
+} else {
+  console.warn('[AutoUpdater] ⚠️  No GitHub token - updates will fail for private repos');
+}
 
 let splashWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
-let productionServer: any = null; // Keep reference to HTTP server
+let isCreatingWindow = false;
 
 // Create splash window for update progress
 function createSplashWindow() {
@@ -121,7 +160,7 @@ function createSplashWindow() {
 
 // Update splash window status
 function updateSplashStatus(status: string, progress?: number) {
-  if (!splashWindow) return;
+  if (!splashWindow || splashWindow.isDestroyed()) return;
 
   splashWindow.webContents.executeJavaScript(`
     document.getElementById('status').textContent = '${status}';
@@ -133,27 +172,45 @@ function updateSplashStatus(status: string, progress?: number) {
   `);
 }
 
-// Auto-updater event handlers (Discord-style silent update)
+// Auto-updater event handlers with detailed logging
 autoUpdater.on('checking-for-update', () => {
-  console.log('[AutoUpdater] Checking for updates...');
-  if (splashWindow) {
+  console.log('[AutoUpdater] =================================================');
+  console.log('[AutoUpdater] 🔍 Checking for updates...');
+  console.log('[AutoUpdater] Current version:', app.getVersion());
+  console.log('[AutoUpdater] =================================================');
+  if (splashWindow && !splashWindow.isDestroyed()) {
     updateSplashStatus('Checking for updates...');
   }
 });
 
 autoUpdater.on('update-available', (info) => {
-  console.log('[AutoUpdater] Update available:', info.version);
-  if (splashWindow) {
-    updateSplashStatus(`Downloading update v${info.version}...`, 0);
+  console.log('[AutoUpdater] =================================================');
+  console.log('[AutoUpdater] ✅ UPDATE AVAILABLE!');
+  console.log('[AutoUpdater] Current version:', app.getVersion());
+  console.log('[AutoUpdater] New version:', info.version);
+  console.log('[AutoUpdater] Release date:', info.releaseDate);
+  console.log('[AutoUpdater] Download URL:', info.files?.[0]?.url);
+  console.log('[AutoUpdater] Starting download...');
+  console.log('[AutoUpdater] =================================================');
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    updateSplashStatus(`Downloading v${info.version}...`, 0);
   }
 });
 
-autoUpdater.on('update-not-available', () => {
-  console.log('[AutoUpdater] No updates available');
-  if (splashWindow) {
+autoUpdater.on('update-not-available', (info) => {
+  console.log('[AutoUpdater] =================================================');
+  console.log('[AutoUpdater] ℹ️  No updates available');
+  console.log('[AutoUpdater] Current version:', app.getVersion());
+  console.log('[AutoUpdater] Latest version:', info.version);
+  console.log('[AutoUpdater] Launching app...');
+  console.log('[AutoUpdater] =================================================');
+  if (splashWindow && !splashWindow.isDestroyed()) {
     updateSplashStatus('Launching...', 100);
     setTimeout(() => {
-      splashWindow?.close();
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
       createWindow();
     }, 500);
   } else {
@@ -161,33 +218,39 @@ autoUpdater.on('update-not-available', () => {
   }
 });
 
-autoUpdater.on('download-progress', (progressObj) => {
-  const percent = progressObj.percent;
-  console.log(`[AutoUpdater] Download progress: ${percent.toFixed(2)}%`);
-  if (splashWindow) {
-    updateSplashStatus(`Downloading update... ${progressObj.transferred}/${progressObj.total} bytes`, percent);
+autoUpdater.on('download-progress', (progress) => {
+  const percent = progress.percent;
+  console.log(`[AutoUpdater] Download progress: ${percent.toFixed(1)}%`);
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    updateSplashStatus(`Downloading update...`, percent);
   }
 });
 
-autoUpdater.on('update-downloaded', () => {
-  console.log('[AutoUpdater] Update downloaded, installing...');
-  if (splashWindow) {
-    updateSplashStatus('Installing update...', 100);
+autoUpdater.on('update-downloaded', (info) => {
+  console.log('[AutoUpdater] Update downloaded:', info.version);
+  console.log('[AutoUpdater] Update will be installed on quit');
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    updateSplashStatus('Update ready! Restarting...', 100);
+    setTimeout(() => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      // Quit and install the update
+      autoUpdater.quitAndInstall(false, true);
+    }, 1000);
   }
-
-  // Install and restart immediately (Discord-style)
-  setTimeout(() => {
-    autoUpdater.quitAndInstall(false, true);
-  }, 1000);
 });
 
-autoUpdater.on('error', (error) => {
-  console.error('[AutoUpdater] Error:', error);
-  // On error, just continue launching the app
-  if (splashWindow) {
+autoUpdater.on('error', (err) => {
+  console.error('[AutoUpdater] Update error:', err);
+  if (splashWindow && !splashWindow.isDestroyed()) {
     updateSplashStatus('Launching...', 100);
     setTimeout(() => {
-      splashWindow?.close();
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
       createWindow();
     }, 500);
   } else {
@@ -211,6 +274,13 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 function createWindow() {
+  // Prevent creating multiple windows
+  if (isCreatingWindow || mainWindow) {
+    console.log('[Main] Window already exists or is being created, skipping...');
+    return;
+  }
+
+  isCreatingWindow = true;
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -269,7 +339,15 @@ function createWindow() {
       }
       return { action: 'allow' };
     });
+
+    // Reset flag when window is closed
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+      isCreatingWindow = false;
+    });
   }
+
+  isCreatingWindow = false;
 }
 
 app.whenReady().then(() => {
@@ -286,7 +364,10 @@ app.whenReady().then(() => {
       autoUpdater.checkForUpdates().catch((err) => {
         console.error('[AutoUpdater] Failed to check for updates:', err);
         // On error, close splash and launch app
-        splashWindow?.close();
+        if (splashWindow && !splashWindow.isDestroyed()) {
+          splashWindow.close();
+          splashWindow = null;
+        }
         createWindow();
       });
     }, 1000);
@@ -313,6 +394,19 @@ app.whenReady().then(() => {
   ipcMain.on('close-window', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     win?.close();
+  });
+
+  // Handle open logs folder request
+  ipcMain.on('open-logs', () => {
+    const logPath = log.transports.file.getFile().path;
+    const logDir = require('path').dirname(logPath);
+    shell.openPath(logDir);
+  });
+
+  // Handle check for updates manually
+  ipcMain.on('check-updates', () => {
+    console.log('[AutoUpdater] Manual update check requested');
+    autoUpdater.checkForUpdates();
   });
 
   app.on('activate', () => {

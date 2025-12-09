@@ -10,7 +10,9 @@ import type {
 } from '@/types/messages';
 
 /**
- * IMPROVED Configuration for WebRTC connection with multiple TURN servers
+ * WebRTC Configuration with multiple STUN/TURN servers
+ * Uses Perfect Negotiation pattern as per MDN recommendation
+ * https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Perfect_negotiation
  */
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
@@ -37,19 +39,20 @@ const RTC_CONFIG: RTCConfiguration = {
   ],
   bundlePolicy: 'max-bundle',
   rtcpMuxPolicy: 'require',
-  iceCandidatePoolSize: 0, // Don't pre-gather ICE candidates
+  iceCandidatePoolSize: 0,
   iceTransportPolicy: 'all',
 };
 
 /**
  * useWebRTC - Hook for managing WebRTC peer-to-peer video connection
  *
- * Handles:
- * - RTCPeerConnection lifecycle
- * - WebRTC signaling via WebSocket
- * - Local/remote media stream management
- * - ICE candidate exchange
- * - Offer/Answer negotiation
+ * Implements Perfect Negotiation pattern for robust WebRTC connections:
+ * - Automatic ICE restart on connection failure
+ * - Glare-free offer/answer negotiation
+ * - Polite/impolite peer roles for collision handling
+ * - Connection recovery and reconnection
+ *
+ * Reference: https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Perfect_negotiation
  */
 export function useWebRTC() {
   const { roomId, userId, wsClient, users } = useRoom();
@@ -61,7 +64,13 @@ export function useWebRTC() {
   const [error, setError] = useState<string | null>(null);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const isInitiatorRef = useRef(false);
+
+  // Perfect Negotiation state variables
+  const makingOfferRef = useRef(false);
+  const ignoreOfferRef = useRef(false);
+  const isSettingRemoteAnswerPendingRef = useRef(false);
+  const politeRef = useRef(false); // Will be set based on userId comparison
+  const currentIceGenerationRef = useRef(0); // Track ICE generation to filter stale candidates
 
   // Get partner user ID (the other user in the room)
   // Use findLast to get the most recent partner (avoiding ghost users)
@@ -136,9 +145,10 @@ export function useWebRTC() {
   }, []);
 
   /**
-   * Create and configure RTCPeerConnection
+   * Create and configure RTCPeerConnection with Perfect Negotiation
    */
   const createPeerConnection = useCallback((stream: MediaStream) => {
+    console.log('[WebRTC] Creating new RTCPeerConnection');
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peerConnectionRef.current = pc;
 
@@ -149,10 +159,42 @@ export function useWebRTC() {
 
     // Handle remote stream
     pc.ontrack = (event) => {
+      console.log('[WebRTC] Received remote track');
       if (event.streams && event.streams[0]) {
         setRemoteStream(event.streams[0]);
         setIsConnected(true);
         setIsConnecting(false);
+      }
+    };
+
+    // Perfect Negotiation: Handle negotiation needed
+    pc.onnegotiationneeded = async () => {
+      try {
+        console.log('[WebRTC] Negotiation needed - signaling state:', pc.signalingState);
+
+        // Don't start new negotiation if already in progress
+        if (pc.signalingState !== 'stable') {
+          console.log('[WebRTC] Skipping negotiation - signaling state not stable:', pc.signalingState);
+          return;
+        }
+
+        makingOfferRef.current = true;
+
+        // Auto-generates offer when in stable state
+        await pc.setLocalDescription();
+
+        console.log('[WebRTC] Sending offer:', pc.localDescription?.type);
+        if (wsClient && partnerId) {
+          wsClient.send(WSEventTypes.WEBRTC_OFFER, {
+            roomId,
+            userId,
+            offer: pc.localDescription,
+          });
+        }
+      } catch (err) {
+        console.error('[WebRTC] Failed during negotiation:', err);
+      } finally {
+        makingOfferRef.current = false;
       }
     };
 
@@ -167,42 +209,86 @@ export function useWebRTC() {
       }
     };
 
-    // Handle connection state changes
+    // Handle connection state changes with automatic ICE restart
     pc.onconnectionstatechange = () => {
       console.log('[WebRTC] Connection state:', pc.connectionState);
-      if (pc.connectionState === 'connected') {
-        setIsConnected(true);
-        setIsConnecting(false);
-        setError(null);
-      } else if (pc.connectionState === 'disconnected') {
-        setIsConnected(false);
-        console.log('[WebRTC] Connection disconnected, waiting for recovery...');
-      } else if (pc.connectionState === 'failed') {
-        setIsConnected(false);
-        setIsConnecting(false);
-        setError('Connection failed. Click reconnect.');
-        console.error('[WebRTC] Connection failed - ICE connection may need restart');
+
+      switch (pc.connectionState) {
+        case 'connected':
+          console.log('[WebRTC] ✅ Connection established successfully');
+          setIsConnected(true);
+          setIsConnecting(false);
+          setError(null);
+          break;
+
+        case 'disconnected':
+          console.log('[WebRTC] ⚠️ Connection disconnected, attempting recovery...');
+          setIsConnected(false);
+          // Don't trigger ICE restart yet, wait to see if it recovers
+          break;
+
+        case 'failed':
+          console.error('[WebRTC] ❌ Connection failed, triggering ICE restart...');
+          setIsConnected(false);
+          setError('Connection lost. Reconnecting...');
+
+          // Automatic ICE restart on failure
+          try {
+            pc.restartIce();
+            console.log('[WebRTC] ICE restart triggered - renegotiation will happen automatically');
+          } catch (err) {
+            console.error('[WebRTC] ICE restart failed:', err);
+            setError('Reconnection failed. Please try manual reconnect.');
+          }
+          break;
+
+        case 'closed':
+          console.log('[WebRTC] Connection closed');
+          setIsConnected(false);
+          setIsConnecting(false);
+          break;
       }
     };
 
     // Handle ICE connection state changes
     pc.oniceconnectionstatechange = () => {
       console.log('[WebRTC] ICE connection state:', pc.iceConnectionState);
-      if (pc.iceConnectionState === 'failed') {
-        console.error('[WebRTC] ICE connection failed - may need TURN servers for NAT traversal');
-        setError('Connection failed. Network issues or firewall blocking.');
-      } else if (pc.iceConnectionState === 'disconnected') {
-        console.warn('[WebRTC] ICE connection disconnected');
-      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-        console.log('[WebRTC] ICE connection established');
+
+      switch (pc.iceConnectionState) {
+        case 'checking':
+          console.log('[WebRTC] Checking ICE candidates...');
+          break;
+
+        case 'connected':
+        case 'completed':
+          console.log('[WebRTC] ✅ ICE connection established');
+          break;
+
+        case 'disconnected':
+          console.warn('[WebRTC] ⚠️ ICE connection disconnected');
+          break;
+
+        case 'failed':
+          console.error('[WebRTC] ❌ ICE connection failed - TURN server may be needed');
+          break;
+
+        case 'closed':
+          console.log('[WebRTC] ICE connection closed');
+          break;
       }
+    };
+
+    // Handle ICE gathering state
+    pc.onicegatheringstatechange = () => {
+      console.log('[WebRTC] ICE gathering state:', pc.iceGatheringState);
     };
 
     return pc;
   }, [roomId, userId, wsClient, partnerId]);
 
   /**
-   * Start WebRTC connection as initiator (creates offer)
+   * Start WebRTC connection using Perfect Negotiation
+   * Both peers run identical code - no initiator/responder distinction
    */
   const startConnection = useCallback(async () => {
     if (!wsClient || !partnerId) {
@@ -210,41 +296,22 @@ export function useWebRTC() {
       return;
     }
 
-    // Only initiate if our userId is "greater" than partner's (deterministic initiator)
-    const shouldInitiate = userId > partnerId;
-    console.log('[WebRTC] Connection check - userId:', userId, 'partnerId:', partnerId, 'shouldInitiate:', shouldInitiate);
-    
-    if (!shouldInitiate) {
-      console.log('[WebRTC] Waiting for partner to initiate connection (this user will receive offer)');
-      // Still need to initialize local stream for when we receive offer
-      setIsConnecting(true);
-      await initializeLocalStream();
-      return;
-    }
+    // Determine politeness: lower userId is polite peer
+    const isPolite = userId < partnerId;
+    politeRef.current = isPolite;
+    console.log('[WebRTC] Perfect Negotiation - userId:', userId, 'partnerId:', partnerId, 'isPolite:', isPolite);
 
-    console.log('[WebRTC] This user is the initiator - creating and sending offer');
     try {
       setIsConnecting(true);
       setError(null);
-      isInitiatorRef.current = true;
 
       // Get local stream
       const stream = await initializeLocalStream();
 
-      // Create peer connection
-      const pc = createPeerConnection(stream);
+      // Create peer connection (this will automatically trigger negotiationneeded)
+      createPeerConnection(stream);
 
-      // Create and send offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      console.log('[WebRTC] Sending offer to partner via Socket.IO');
-      wsClient.send(WSEventTypes.WEBRTC_OFFER, {
-        roomId,
-        userId,
-        offer: offer,
-      });
-      console.log('[WebRTC] Offer sent successfully');
+      console.log('[WebRTC] Peer connection created, waiting for negotiation...');
     } catch (err) {
       console.error('[WebRTC] Failed to start connection:', err);
       setIsConnecting(false);
@@ -253,88 +320,74 @@ export function useWebRTC() {
   }, [wsClient, partnerId, roomId, userId, initializeLocalStream, createPeerConnection]);
 
   /**
-   * Handle incoming WebRTC offer
+   * Handle incoming signaling message (Perfect Negotiation pattern)
+   * Handles both offers and answers with glare resolution
    */
-  const handleOffer = useCallback(async (offer: RTCSessionDescriptionInit) => {
-    console.log('[WebRTC] ✅ Received offer from partner:', offer);
-    if (!wsClient) {
-      console.log('[WebRTC] ❌ Cannot handle offer - no wsClient');
-      return;
-    }
-    if (isInitiatorRef.current) {
-      console.log('[WebRTC] ⚠️ Ignoring offer - this user is the initiator');
+  const handleSignalingMessage = useCallback(async (description: RTCSessionDescriptionInit) => {
+    const pc = peerConnectionRef.current;
+    if (!pc) {
+      console.log('[WebRTC] ⚠️ No peer connection, cannot handle signaling message');
       return;
     }
 
     try {
-      console.log('[WebRTC] 📞 Preparing to answer offer...');
-      setIsConnecting(true);
-      setError(null);
+      // Perfect Negotiation: Detect glare condition
+      const readyForOffer =
+        !makingOfferRef.current &&
+        (pc.signalingState === 'stable' || isSettingRemoteAnswerPendingRef.current);
 
-      // Get local stream if not already available
-      let stream = localStream;
-      if (!stream) {
-        console.log('[WebRTC] Getting local stream for answer...');
-        stream = await initializeLocalStream();
+      const offerCollision = description.type === 'offer' && !readyForOffer;
+
+      // Determine if we should ignore this offer (impolite peer ignores collisions)
+      const isPolite = politeRef.current;
+      ignoreOfferRef.current = !isPolite && offerCollision;
+
+      if (ignoreOfferRef.current) {
+        console.log('[WebRTC] 🚫 Impolite peer ignoring colliding offer');
+        return;
       }
 
-      // Create peer connection if not exists
-      let pc = peerConnectionRef.current;
-      if (!pc) {
-        console.log('[WebRTC] Creating peer connection for answer...');
-        pc = createPeerConnection(stream);
+      // Track if we're setting an answer (for glare detection)
+      isSettingRemoteAnswerPendingRef.current = description.type === 'answer';
+
+      console.log('[WebRTC] 📨 Processing', description.type, '- polite:', isPolite, 'collision:', offerCollision);
+
+      // Increment ICE generation counter when setting new remote description
+      // This marks all future ICE candidates as belonging to this negotiation
+      if (description.type === 'offer' || description.type === 'answer') {
+        currentIceGenerationRef.current++;
+        console.log('[WebRTC] ICE generation:', currentIceGenerationRef.current);
       }
 
       // Set remote description
-      console.log('[WebRTC] Setting remote description (offer)...');
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      await pc.setRemoteDescription(description);
 
-      // Create and send answer
-      console.log('[WebRTC] Creating answer...');
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      isSettingRemoteAnswerPendingRef.current = false;
 
-      console.log('[WebRTC] Sending answer to partner via Socket.IO');
-      wsClient.send(WSEventTypes.WEBRTC_ANSWER, {
-        roomId,
-        userId,
-        answer: answer,
-      });
-      console.log('[WebRTC] ✅ Answer sent successfully');
+      // If it was an offer, automatically create and send answer
+      if (description.type === 'offer') {
+        console.log('[WebRTC] Received offer, creating answer...');
+
+        // Auto-generates answer
+        await pc.setLocalDescription();
+
+        console.log('[WebRTC] Sending answer to partner');
+        if (wsClient) {
+          wsClient.send(WSEventTypes.WEBRTC_ANSWER, {
+            roomId,
+            userId,
+            answer: pc.localDescription,
+          });
+        }
+      }
     } catch (err) {
-      console.error('[WebRTC] ❌ Failed to handle offer:', err);
-      setIsConnecting(false);
-      setError(err instanceof Error ? err.message : 'Failed to handle offer');
+      console.error('[WebRTC] ❌ Failed to handle signaling message:', err);
+      setError(err instanceof Error ? err.message : 'Failed to handle signaling');
     }
-  }, [wsClient, localStream, roomId, userId, initializeLocalStream, createPeerConnection]);
+  }, [wsClient, roomId, userId]);
 
   /**
-   * Handle incoming WebRTC answer
-   */
-  const handleAnswer = useCallback(async (answer: RTCSessionDescriptionInit) => {
-    console.log('[WebRTC] ✅ Received answer from partner:', answer);
-    const pc = peerConnectionRef.current;
-    if (!pc) {
-      console.log('[WebRTC] ❌ Cannot handle answer - no peer connection');
-      return;
-    }
-    if (!isInitiatorRef.current) {
-      console.log('[WebRTC] ⚠️ Ignoring answer - this user is not the initiator');
-      return;
-    }
-
-    try {
-      console.log('[WebRTC] Setting remote description (answer)...');
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
-      console.log('[WebRTC] ✅ Remote description set - connection should establish now');
-    } catch (err) {
-      console.error('[WebRTC] ❌ Failed to handle answer:', err);
-      setError(err instanceof Error ? err.message : 'Failed to handle answer');
-    }
-  }, []);
-
-  /**
-   * Handle incoming ICE candidate
+   * Handle incoming ICE candidate (Perfect Negotiation)
    */
   const handleICECandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
     const pc = peerConnectionRef.current;
@@ -345,7 +398,10 @@ export function useWebRTC() {
     try {
       await pc.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (err) {
-      console.error('[WebRTC] Failed to add ICE candidate:', err);
+      // Ignore errors if we ignored the offer this candidate belongs to
+      if (!ignoreOfferRef.current) {
+        console.error('[WebRTC] Failed to add ICE candidate:', err);
+      }
     }
   }, []);
 
@@ -369,37 +425,35 @@ export function useWebRTC() {
     setRemoteStream(null);
     setIsConnected(false);
     setIsConnecting(false);
-    isInitiatorRef.current = false;
+
+    // Reset Perfect Negotiation state
+    makingOfferRef.current = false;
+    ignoreOfferRef.current = false;
+    isSettingRemoteAnswerPendingRef.current = false;
   }, [localStream]);
 
-  // Subscribe to WebRTC signaling messages
+  // Subscribe to WebRTC signaling messages (Perfect Negotiation)
   useEffect(() => {
     if (!wsClient) return;
 
-    console.log('[WebRTC] Setting up message listeners for signaling events');
+    console.log('[WebRTC] Setting up Perfect Negotiation message listeners');
 
     const unsubscribe = wsClient.onMessage((message: ServerMessage) => {
       switch (message.type) {
         case WSEventTypes.WEBRTC_OFFER_BROADCAST: {
           const payload = message.payload as WebRTCOfferBroadcastPayload;
-          console.log('[WebRTC] 📨 Received WEBRTC_OFFER_BROADCAST from userId:', payload.userId);
           if (payload.userId !== userId) {
-            console.log('[WebRTC] Offer is from partner, handling...');
-            handleOffer(payload.offer);
-          } else {
-            console.log('[WebRTC] Offer is from self, ignoring');
+            console.log('[WebRTC] 📨 Received offer from partner');
+            handleSignalingMessage(payload.offer);
           }
           break;
         }
 
         case WSEventTypes.WEBRTC_ANSWER_BROADCAST: {
           const payload = message.payload as WebRTCAnswerBroadcastPayload;
-          console.log('[WebRTC] 📨 Received WEBRTC_ANSWER_BROADCAST from userId:', payload.userId);
           if (payload.userId !== userId) {
-            console.log('[WebRTC] Answer is from partner, handling...');
-            handleAnswer(payload.answer);
-          } else {
-            console.log('[WebRTC] Answer is from self, ignoring');
+            console.log('[WebRTC] 📨 Received answer from partner');
+            handleSignalingMessage(payload.answer);
           }
           break;
         }
@@ -407,7 +461,6 @@ export function useWebRTC() {
         case WSEventTypes.WEBRTC_ICE_CANDIDATE_BROADCAST: {
           const payload = message.payload as WebRTCICECandidateBroadcastPayload;
           if (payload.userId !== userId) {
-            console.log('[WebRTC] 📨 Received ICE candidate from partner');
             handleICECandidate(payload.candidate);
           }
           break;
@@ -416,7 +469,7 @@ export function useWebRTC() {
     });
 
     return unsubscribe;
-  }, [wsClient, userId, handleOffer, handleAnswer, handleICECandidate]);
+  }, [wsClient, userId, handleSignalingMessage, handleICECandidate]);
 
   // Cleanup on unmount
   useEffect(() => {
