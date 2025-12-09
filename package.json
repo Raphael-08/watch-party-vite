@@ -14,7 +14,7 @@
     "build": "tsc -b && vite build && electron-builder",
     "build:web": "tsc -b && vite build",
     "build:dir": "tsc -b && vite build && electron-builder --dir",
-    "release": "dotenv -e .env -- tsc -b && vite build && electron-builder --publish always",
+    "release": "node scripts/release.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -111,6 +111,7 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "cross-env": "^10.1.0",
     "dotenv-cli": "^11.0.0",
     "electron": "^39.2.4",
     "electron-builder": "^26.0.12",
