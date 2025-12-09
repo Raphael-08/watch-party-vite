@@ -255,69 +255,9 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    // In production, use a local server instead of file:// or app://
-    // This ensures proper CORS and Origin headers for Appwrite
-    const http = require('http');
-    const fs = require('fs/promises');
-    const pathUtil = require('path');
-
-    // Only create server if it doesn't exist
-    if (!productionServer) {
-      productionServer = http.createServer(async (req: any, res: any) => {
-        const distPath = pathUtil.join(__dirname, '../dist');
-        let filePath = req.url === '/' ? '/index.html' : req.url;
-
-        try {
-          const content = await fs.readFile(pathUtil.join(distPath, filePath));
-          const ext = filePath.split('.').pop();
-          const mimeTypes: Record<string, string> = {
-            'html': 'text/html',
-            'css': 'text/css',
-            'js': 'application/javascript',
-            'json': 'application/json',
-            'png': 'image/png',
-            'jpg': 'image/jpeg',
-            'svg': 'image/svg+xml',
-            'ico': 'image/x-icon',
-            'woff': 'font/woff',
-            'woff2': 'font/woff2',
-          };
-
-          res.writeHead(200, { 'Content-Type': mimeTypes[ext || 'html'] || 'text/plain' });
-          res.end(content);
-        } catch (error) {
-          if (req.url !== '/index.html') {
-            // Try serving index.html for SPA routing
-            try {
-              const indexContent = await fs.readFile(pathUtil.join(distPath, 'index.html'));
-              res.writeHead(200, { 'Content-Type': 'text/html' });
-              res.end(indexContent);
-            } catch {
-              res.writeHead(404);
-              res.end('Not Found');
-            }
-          } else {
-            res.writeHead(404);
-            res.end('Not Found');
-          }
-        }
-      });
-
-      // Use a fixed port so localStorage persists across app restarts
-      const FIXED_PORT = 51337;
-      productionServer.listen(FIXED_PORT, () => {
-        mainWindow?.loadURL(`http://localhost:${FIXED_PORT}`);
-        console.log(`Production server running on http://localhost:${FIXED_PORT}`);
-      });
-
-      // Keep server alive - set timeout to 0 (infinite)
-      productionServer.setTimeout(0);
-      productionServer.keepAliveTimeout = 0;
-      productionServer.headersTimeout = 0;
-    } else {
-      // Server already exists, just load the URL
-      mainWindow.loadURL('http://localhost:51337');
-    }
+    // In production, load from file:// - simpler and more stable
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    mainWindow.loadFile(indexPath);
   }
 
   // Handle external links
