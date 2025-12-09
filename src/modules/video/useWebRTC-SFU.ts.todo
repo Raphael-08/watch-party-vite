@@ -1,0 +1,338 @@
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRoom } from '../room/RoomContext';
+import { WSEventTypes } from '@/types/messages';
+import type {
+  WebRTCAnswerPayload,
+  WebRTCICECandidatePayload,
+  ServerMessage,
+} from '@/types/messages';
+
+/**
+ * Configuration for WebRTC connection
+ */
+const RTC_CONFIG: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ],
+  iceCandidatePoolSize: 10,
+  iceTransportPolicy: 'all',
+};
+
+/**
+ * useWebRTC - Hook for managing WebRTC connection with SFU
+ *
+ * This version connects to the server's SFU (Selective Forwarding Unit)
+ * instead of peer-to-peer connections. The SFU handles media routing
+ * between all participants in the room.
+ *
+ * Key differences from P2P:
+ * - Each client connects to the SFU server (not to each other)
+ * - Server sends answer (not peer)
+ * - Server routes media between clients
+ * - Supports 3+ participants
+ */
+export function useWebRTC() {
+  const { roomId, userId, wsClient, users } = useRoom();
+
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+
+  // Get partner user IDs (all other users in the room)
+  const partners = users.filter((u) => u.userId !== userId);
+  const hasPartners = partners.length > 0;
+
+  // Debug logging
+  useEffect(() => {
+    console.log('[WebRTC-SFU] Users in room:', users.map(u => ({ userId: u.userId, username: u.username })));
+    console.log('[WebRTC-SFU] Current userId:', userId);
+    console.log('[WebRTC-SFU] Partners:', partners.map(p => p.username));
+    console.log('[WebRTC-SFU] hasPartners:', hasPartners);
+  }, [users, userId, partners, hasPartners]);
+
+  /**
+   * Initialize local media stream (camera + microphone)
+   */
+  const initializeLocalStream = useCallback(async () => {
+    try {
+      console.log('[WebRTC-SFU] Requesting media access...');
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 1280, height: 720, facingMode: 'user' },
+          audio: { echoCancellation: true, noiseSuppression: true },
+        });
+      } catch (firstErr) {
+        console.warn('[WebRTC-SFU] Failed with specific constraints, trying basic constraints:', firstErr);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          });
+        } catch (secondErr) {
+          console.warn('[WebRTC-SFU] Failed with video, trying audio-only mode:', secondErr);
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: false,
+            audio: true,
+          });
+          console.log('[WebRTC-SFU] Running in audio-only mode');
+        }
+      }
+
+      console.log('[WebRTC-SFU] Media access granted:', {
+        videoTracks: stream.getVideoTracks().length,
+        audioTracks: stream.getAudioTracks().length,
+      });
+
+      setLocalStream(stream);
+      return stream;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to access camera/microphone';
+      setError(errorMsg);
+      console.error('[WebRTC-SFU] Failed to get local stream:', err);
+
+      if (err instanceof DOMException) {
+        if (err.name === 'NotAllowedError') {
+          setError('Camera/microphone access denied. Please allow permissions and refresh.');
+        } else if (err.name === 'NotFoundError') {
+          setError('No camera or microphone found.');
+        } else if (err.name === 'NotReadableError') {
+          setError('Camera is already in use by another application.');
+        }
+      }
+
+      throw err;
+    }
+  }, []);
+
+  /**
+   * Create and configure RTCPeerConnection to SFU
+   */
+  const createPeerConnection = useCallback((stream: MediaStream) => {
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    peerConnectionRef.current = pc;
+
+    // Add local tracks to peer connection
+    stream.getTracks().forEach((track) => {
+      pc.addTrack(track, stream);
+      console.log('[WebRTC-SFU] Added local track:', track.kind);
+    });
+
+    // Handle remote tracks from SFU
+    pc.ontrack = (event) => {
+      console.log('[WebRTC-SFU] Received remote track:', event.track.kind);
+
+      if (event.streams && event.streams[0]) {
+        const stream = event.streams[0];
+        const streamId = stream.id;
+
+        setRemoteStreams((prev) => {
+          const newStreams = new Map(prev);
+          newStreams.set(streamId, stream);
+          console.log('[WebRTC-SFU] Remote streams count:', newStreams.size);
+          return newStreams;
+        });
+
+        setIsConnected(true);
+        setIsConnecting(false);
+      }
+    });
+
+    // Handle ICE candidates - send to SFU
+    pc.onicecandidate = (event) => {
+      if (event.candidate && wsClient) {
+        console.log('[WebRTC-SFU] Sending ICE candidate to SFU');
+        wsClient.send(WSEventTypes.WEBRTC_ICE_CANDIDATE, {
+          roomId,
+          userId,
+          candidate: event.candidate.toJSON(),
+        });
+      }
+    };
+
+    // Handle connection state changes
+    pc.onconnectionstatechange = () => {
+      console.log('[WebRTC-SFU] Connection state:', pc.connectionState);
+      if (pc.connectionState === 'connected') {
+        setIsConnected(true);
+        setIsConnecting(false);
+        setError(null);
+      } else if (pc.connectionState === 'disconnected') {
+        setIsConnected(false);
+        console.log('[WebRTC-SFU] Connection disconnected, waiting for recovery...');
+      } else if (pc.connectionState === 'failed') {
+        setIsConnected(false);
+        setIsConnecting(false);
+        setError('Connection failed. Click reconnect.');
+        console.error('[WebRTC-SFU] Connection failed');
+      }
+    });
+
+    // Handle ICE connection state changes
+    pc.oniceconnectionstatechange = () => {
+      console.log('[WebRTC-SFU] ICE connection state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        console.error('[WebRTC-SFU] ICE connection failed - may need TURN servers');
+        setError('Connection failed. Network issues or firewall blocking.');
+      }
+    };
+
+    return pc;
+  }, [roomId, userId, wsClient, setRemoteStreams, setIsConnected, setIsConnecting, setError]);
+
+  /**
+   * Start WebRTC connection to SFU
+   * In SFU mode, every client creates an offer and sends it to the server
+   */
+  const startConnection = useCallback(async () => {
+    if (!wsClient) {
+      console.log('[WebRTC-SFU] Cannot start - no wsClient');
+      return;
+    }
+
+    console.log('[WebRTC-SFU] Starting connection to SFU');
+    try {
+      setIsConnecting(true);
+      setError(null);
+
+      // Get local stream
+      const stream = await initializeLocalStream();
+
+      // Create peer connection
+      const pc = createPeerConnection(stream);
+
+      // Create offer and send to SFU
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      console.log('[WebRTC-SFU] Sending offer to SFU server');
+      wsClient.send(WSEventTypes.WEBRTC_OFFER, {
+        roomId,
+        userId,
+        offer: offer,
+      });
+      console.log('[WebRTC-SFU] Offer sent successfully');
+    } catch (err) {
+      console.error('[WebRTC-SFU] Failed to start connection:', err);
+      setIsConnecting(false);
+      setError(err instanceof Error ? err.message : 'Failed to start connection');
+    }
+  }, [wsClient, roomId, userId, initializeLocalStream, createPeerConnection]);
+
+  /**
+   * Handle incoming answer from SFU server
+   */
+  const handleAnswer = useCallback(async (answer: RTCSessionDescriptionInit) => {
+    console.log('[WebRTC-SFU] ✅ Received answer from SFU server');
+    const pc = peerConnectionRef.current;
+    if (!pc) {
+      console.log('[WebRTC-SFU] ❌ Cannot handle answer - no peer connection');
+      return;
+    }
+
+    try {
+      console.log('[WebRTC-SFU] Setting remote description (answer from SFU)...');
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      console.log('[WebRTC-SFU] ✅ Remote description set - connection should establish now');
+    } catch (err) {
+      console.error('[WebRTC-SFU] ❌ Failed to handle answer:', err);
+      setError(err instanceof Error ? err.message : 'Failed to handle answer');
+    }
+  }, []);
+
+  /**
+   * Handle incoming ICE candidate from SFU server
+   */
+  const handleICECandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
+    const pc = peerConnectionRef.current;
+    if (!pc) {
+      return;
+    }
+
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log('[WebRTC-SFU] Added ICE candidate from SFU');
+    } catch (err) {
+      console.error('[WebRTC-SFU] Failed to add ICE candidate:', err);
+    }
+  }, []);
+
+  /**
+   * Stop WebRTC connection and clean up resources
+   */
+  const stopConnection = useCallback(() => {
+    // Close peer connection
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+
+    // Stop local stream tracks
+    if (localStream) {
+      localStream.getTracks().forEach((track) => track.stop());
+      setLocalStream(null);
+    }
+
+    // Clear remote streams
+    setRemoteStreams(new Map());
+    setIsConnected(false);
+    setIsConnecting(false);
+  }, [localStream]);
+
+  // Subscribe to SFU signaling messages
+  useEffect(() => {
+    if (!wsClient) return;
+
+    console.log('[WebRTC-SFU] Setting up message listeners for SFU signaling');
+
+    const unsubscribe = wsClient.onMessage((message: ServerMessage) => {
+      switch (message.type) {
+        case WSEventTypes.WEBRTC_ANSWER: {
+          // Answer from SFU server (not from peer)
+          const payload = message.payload as WebRTCAnswerPayload;
+          console.log('[WebRTC-SFU] 📨 Received WEBRTC_ANSWER from SFU server');
+          handleAnswer(payload.answer);
+          break;
+        }
+
+        case WSEventTypes.WEBRTC_ICE_CANDIDATE: {
+          // ICE candidate from SFU server
+          const payload = message.payload as WebRTCICECandidatePayload;
+          console.log('[WebRTC-SFU] 📨 Received ICE candidate from SFU');
+          handleICECandidate(payload.candidate);
+          break;
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [wsClient, handleAnswer, handleICECandidate]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopConnection();
+    };
+  }, [stopConnection]);
+
+  // For backwards compatibility, return the first remote stream as "remoteStream"
+  const firstRemoteStream = remoteStreams.size > 0 ? Array.from(remoteStreams.values())[0] : null;
+
+  return {
+    localStream,
+    remoteStream: firstRemoteStream, // Primary remote stream for PIP window
+    remoteStreams, // All remote streams (for multi-party support)
+    isConnecting,
+    isConnected,
+    error,
+    startConnection,
+    stopConnection,
+    hasPartner: hasPartners, // For UI to show "waiting for others"
+  };
+}
