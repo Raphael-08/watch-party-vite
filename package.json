@@ -1,7 +1,7 @@
 {
   "name": "watch-party-vite",
   "private": true,
-  "version": "1.1.5",
+  "version": "1.1.6",
   "author": "Your Name",
   "description": "Watch videos together in sync with friends",
   "main": "dist-electron/main.js",

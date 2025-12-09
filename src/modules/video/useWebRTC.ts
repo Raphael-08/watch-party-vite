@@ -384,6 +384,11 @@ export function useWebRTC() {
         console.log('[WebRTC-SFU] 🔄 Negotiation needed - creating new offer');
         makingOfferRef.current = true;
 
+        // CRITICAL: Clear old ICE candidates when starting new negotiation
+        // This prevents stale candidates from being added after camera toggle
+        console.log('[WebRTC-SFU] 🧹 Clearing ICE candidate buffer for new negotiation');
+        iceCandidateBufferRef.current = [];
+
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -553,10 +558,15 @@ export function useWebRTC() {
     }
 
     try {
+      // CRITICAL: Clear stale ICE candidates before setting answer
+      // This prevents ufrag mismatch errors during renegotiation
+      console.log('[WebRTC-SFU] 🧹 Clearing stale ICE candidates before processing answer');
+      iceCandidateBufferRef.current = [];
+
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
       console.log('[WebRTC-SFU] ✅ Remote description set');
 
-      // Process buffered ICE candidates
+      // Process any NEW ICE candidates that arrived while setting remote description
       if (iceCandidateBufferRef.current.length > 0) {
         console.log(`[WebRTC-SFU] Processing ${iceCandidateBufferRef.current.length} buffered candidates`);
         for (const candidate of iceCandidateBufferRef.current) {
@@ -602,9 +612,14 @@ export function useWebRTC() {
         await pc.setLocalDescription({ type: 'rollback' });
       }
 
+      // CRITICAL: Clear stale ICE candidates before setting new remote description
+      // This prevents ufrag mismatch errors when partner reconnects
+      console.log('[WebRTC-SFU] 🧹 Clearing stale ICE candidates before processing new offer');
+      iceCandidateBufferRef.current = [];
+
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-      // Process buffered candidates
+      // Note: Buffer was cleared above, so this won't process stale candidates
       if (iceCandidateBufferRef.current.length > 0) {
         for (const candidate of iceCandidateBufferRef.current) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
