@@ -37,7 +37,46 @@ if (!process.env.GH_TOKEN) {
 }
 
 console.log('✓ GitHub token found');
-console.log('Building and publishing to GitHub Releases...\n');
+
+// Check for uncommitted changes
+console.log('\nChecking for uncommitted changes...');
+try {
+  const status = execSync('git status --porcelain', { encoding: 'utf-8' });
+  if (status.trim()) {
+    console.log('✗ You have uncommitted changes!');
+    console.log('\nPlease commit and push your changes before releasing:');
+    console.log('  git add -A');
+    console.log('  git commit -m "Your commit message"');
+    console.log('  git push');
+    console.log('\nUncommitted files:');
+    console.log(status);
+    process.exit(1);
+  }
+  console.log('✓ No uncommitted changes');
+} catch (error) {
+  console.error('✗ Failed to check git status:', error.message);
+  process.exit(1);
+}
+
+// Check if local branch is up to date with remote
+console.log('Checking if branch is up to date with remote...');
+try {
+  execSync('git fetch', { stdio: 'inherit' });
+  const localHash = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+  const remoteHash = execSync('git rev-parse @{u}', { encoding: 'utf-8' }).trim();
+
+  if (localHash !== remoteHash) {
+    console.log('✗ Local branch is not up to date with remote!');
+    console.log('Please push your commits first: git push');
+    process.exit(1);
+  }
+  console.log('✓ Branch is up to date with remote');
+} catch (error) {
+  console.error('✗ Failed to check branch status:', error.message);
+  process.exit(1);
+}
+
+console.log('\nBuilding and publishing to GitHub Releases...\n');
 
 try {
   // Run the build and publish
