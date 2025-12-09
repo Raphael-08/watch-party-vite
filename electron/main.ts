@@ -15,6 +15,7 @@ autoUpdater.allowPrerelease = false;
 
 let splashWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
+let productionServer: any = null; // Keep reference to HTTP server
 
 // Create splash window for update progress
 function createSplashWindow() {
@@ -259,53 +260,64 @@ function createWindow() {
     const http = require('http');
     const fs = require('fs/promises');
     const pathUtil = require('path');
-    
-    const server = http.createServer(async (req: any, res: any) => {
-      const distPath = pathUtil.join(__dirname, '../dist');
-      let filePath = req.url === '/' ? '/index.html' : req.url;
-      
-      try {
-        const content = await fs.readFile(pathUtil.join(distPath, filePath));
-        const ext = filePath.split('.').pop();
-        const mimeTypes: Record<string, string> = {
-          'html': 'text/html',
-          'css': 'text/css',
-          'js': 'application/javascript',
-          'json': 'application/json',
-          'png': 'image/png',
-          'jpg': 'image/jpeg',
-          'svg': 'image/svg+xml',
-          'ico': 'image/x-icon',
-          'woff': 'font/woff',
-          'woff2': 'font/woff2',
-        };
-        
-        res.writeHead(200, { 'Content-Type': mimeTypes[ext || 'html'] || 'text/plain' });
-        res.end(content);
-      } catch (error) {
-        if (req.url !== '/index.html') {
-          // Try serving index.html for SPA routing
-          try {
-            const indexContent = await fs.readFile(pathUtil.join(distPath, 'index.html'));
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(indexContent);
-          } catch {
+
+    // Only create server if it doesn't exist
+    if (!productionServer) {
+      productionServer = http.createServer(async (req: any, res: any) => {
+        const distPath = pathUtil.join(__dirname, '../dist');
+        let filePath = req.url === '/' ? '/index.html' : req.url;
+
+        try {
+          const content = await fs.readFile(pathUtil.join(distPath, filePath));
+          const ext = filePath.split('.').pop();
+          const mimeTypes: Record<string, string> = {
+            'html': 'text/html',
+            'css': 'text/css',
+            'js': 'application/javascript',
+            'json': 'application/json',
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'svg': 'image/svg+xml',
+            'ico': 'image/x-icon',
+            'woff': 'font/woff',
+            'woff2': 'font/woff2',
+          };
+
+          res.writeHead(200, { 'Content-Type': mimeTypes[ext || 'html'] || 'text/plain' });
+          res.end(content);
+        } catch (error) {
+          if (req.url !== '/index.html') {
+            // Try serving index.html for SPA routing
+            try {
+              const indexContent = await fs.readFile(pathUtil.join(distPath, 'index.html'));
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end(indexContent);
+            } catch {
+              res.writeHead(404);
+              res.end('Not Found');
+            }
+          } else {
             res.writeHead(404);
             res.end('Not Found');
           }
-        } else {
-          res.writeHead(404);
-          res.end('Not Found');
         }
-      }
-    });
-    
-    // Use a fixed port so localStorage persists across app restarts
-    const FIXED_PORT = 51337;
-    server.listen(FIXED_PORT, () => {
-      mainWindow?.loadURL(`http://localhost:${FIXED_PORT}`);
-      console.log(`Production server running on http://localhost:${FIXED_PORT}`);
-    });
+      });
+
+      // Use a fixed port so localStorage persists across app restarts
+      const FIXED_PORT = 51337;
+      productionServer.listen(FIXED_PORT, () => {
+        mainWindow?.loadURL(`http://localhost:${FIXED_PORT}`);
+        console.log(`Production server running on http://localhost:${FIXED_PORT}`);
+      });
+
+      // Keep server alive - set timeout to 0 (infinite)
+      productionServer.setTimeout(0);
+      productionServer.keepAliveTimeout = 0;
+      productionServer.headersTimeout = 0;
+    } else {
+      // Server already exists, just load the URL
+      mainWindow.loadURL('http://localhost:51337');
+    }
   }
 
   // Handle external links
