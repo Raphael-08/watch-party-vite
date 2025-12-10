@@ -55,9 +55,10 @@ export function PIPVideoWindow({ onClose, webrtcControls }: PIPVideoWindowProps)
   // Attach local stream to video element
   useEffect(() => {
     if (localVideoRef.current && localStream) {
+      console.log('[PIPVideoWindow] Attaching local stream to video element');
       localVideoRef.current.srcObject = localStream;
     }
-  }, [localStream]);
+  }, [localStream, isMinimized]); // Include isMinimized to refresh when maximizing
 
   // Monitor remote stream for track changes
   useEffect(() => {
@@ -85,7 +86,7 @@ export function PIPVideoWindow({ onClose, webrtcControls }: PIPVideoWindowProps)
   // Attach remote stream to video element and handle track changes
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
-      console.log('[PIPVideoWindow] Attaching/refreshing remote stream (version:', remoteTrackVersion, ')');
+      console.log('[PIPVideoWindow] Attaching/refreshing remote stream (version:', remoteTrackVersion, ', minimized:', isMinimized, ')');
       const videoEl = remoteVideoRef.current;
 
       // Completely reset the video element
@@ -103,7 +104,7 @@ export function PIPVideoWindow({ onClose, webrtcControls }: PIPVideoWindowProps)
       console.log('[PIPVideoWindow] Clearing remote video (no stream)');
       remoteVideoRef.current.srcObject = null;
     }
-  }, [remoteStream, remoteTrackVersion]);
+  }, [remoteStream, remoteTrackVersion, isMinimized]); // Include isMinimized to refresh when maximizing
 
   // IMPROVED: Handle partner disconnect/reconnect robustly
   useEffect(() => {

@@ -99,6 +99,7 @@ export function useWebRTC() {
   const maxReconnectAttempts = 5;
   const connectionAttemptedRef = useRef(false);
   const messageHandlersSetupRef = useRef(false);
+  const isInitialConnectionRef = useRef(true); // Track if this is first connection
 
   const MAX_ICE_CANDIDATES = 50;
 
@@ -383,7 +384,8 @@ export function useWebRTC() {
           return;
         }
 
-        console.log('[WebRTC-SFU] 🔄 Negotiation needed - creating new offer');
+        const isRenegotiation = !isInitialConnectionRef.current;
+        console.log(`[WebRTC-SFU] 🔄 Negotiation needed - creating new offer (${isRenegotiation ? 'renegotiation' : 'initial'})`);
         makingOfferRef.current = true;
 
         // CRITICAL: Clear old ICE candidates when starting new negotiation
@@ -394,8 +396,15 @@ export function useWebRTC() {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        // Wait for ICE gathering
-        await waitForIceGathering(pc);
+        // OPTIMIZATION: Only wait for ICE gathering on initial connection
+        // For renegotiations (track add/remove), use Trickle ICE for faster response
+        if (isInitialConnectionRef.current) {
+          console.log('[WebRTC-SFU] Initial connection - waiting for ICE gathering...');
+          await waitForIceGathering(pc);
+          isInitialConnectionRef.current = false; // Mark as no longer initial
+        } else {
+          console.log('[WebRTC-SFU] Renegotiation - using Trickle ICE (fast path)');
+        }
 
         makingOfferRef.current = false;
 
@@ -405,7 +414,7 @@ export function useWebRTC() {
             userId,
             offer: pc.localDescription,
           });
-          console.log('[WebRTC-SFU] ✅ Renegotiation offer sent');
+          console.log('[WebRTC-SFU] ✅ Offer sent');
         }
       } catch (err) {
         makingOfferRef.current = false;
@@ -436,6 +445,7 @@ export function useWebRTC() {
     isNegotiatingRef.current = false;
     makingOfferRef.current = false;
     ignoreOfferRef.current = false;
+    isInitialConnectionRef.current = true; // Reset for next connection
 
     setRemoteStreams(new Map());
     setConnectionState(ConnectionState.IDLE);
