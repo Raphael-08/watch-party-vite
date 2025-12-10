@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MessageSquare, LogOut, Minimize2, Maximize2, Settings, Video, VideoOff } from 'lucide-react';
+import { MessageSquare, LogOut, Minimize2, Maximize2, Settings, Video, VideoOff, Mic, MicOff } from 'lucide-react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import {
   AlertDialog,
@@ -19,6 +19,8 @@ interface OverlayControlsProps {
   isChatOpen: boolean;
   onToggleCamera?: () => void;
   isCameraOpen?: boolean;
+  onToggleAudio?: () => void;
+  isAudioMuted?: boolean;
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
   onLeaveRoom: () => void;
@@ -41,6 +43,8 @@ export function OverlayControls({
   isChatOpen,
   onToggleCamera,
   isCameraOpen = false,
+  onToggleAudio,
+  isAudioMuted = false,
   onToggleFullscreen,
   isFullscreen = false,
   onLeaveRoom,
@@ -117,6 +121,27 @@ export function OverlayControls({
                 title="Settings"
               >
                 <Settings className="w-5 h-5" />
+              </button>
+            )}
+
+            {/* Audio mute/unmute */}
+            {onToggleAudio && (
+              <button
+                onClick={onToggleAudio}
+                className={`
+                  glass-morphism rounded-full h-10 w-10
+                  flex items-center justify-center
+                  text-white transition-all
+                  hover:bg-white/10
+                  ${isAudioMuted ? 'bg-red-500/30 text-red-300' : ''}
+                `}
+                title={isAudioMuted ? 'Unmute microphone' : 'Mute microphone'}
+              >
+                {isAudioMuted ? (
+                  <MicOff className="w-5 h-5" />
+                ) : (
+                  <Mic className="w-5 h-5" />
+                )}
               </button>
             )}
 

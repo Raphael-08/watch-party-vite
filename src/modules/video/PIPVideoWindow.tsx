@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Video, VideoOff, Mic, MicOff, Maximize2, Minimize2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useWebRTC } from './useWebRTC';
 
 interface PIPVideoWindowProps {
   onClose?: () => void;
+  webrtcControls: ReturnType<typeof import('./useWebRTC').useWebRTC>;
 }
 
 /**
@@ -18,7 +18,7 @@ interface PIPVideoWindowProps {
  * - Minimize/maximize toggle
  * - Glass-morphism styling
  */
-export function PIPVideoWindow({ onClose }: PIPVideoWindowProps) {
+export function PIPVideoWindow({ onClose, webrtcControls }: PIPVideoWindowProps) {
   const {
     localStream,
     remoteStream,
@@ -27,12 +27,13 @@ export function PIPVideoWindow({ onClose }: PIPVideoWindowProps) {
     error,
     startConnection,
     stopConnection,
-    toggleVideo,
+    enableVideo,
+    disableVideo,
+    hasVideoTrack,
     toggleAudio,
-    isVideoEnabled,
-    isAudioEnabled,
+    isAudioMuted,
     hasPartner,
-  } = useWebRTC();
+  } = webrtcControls;
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -337,7 +338,7 @@ export function PIPVideoWindow({ onClose }: PIPVideoWindowProps) {
                 muted
                 className="w-full h-full object-cover"
               />
-              {!isVideoEnabled && (
+              {!hasVideoTrack && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                   <VideoOff className="h-6 w-6 text-white/50" />
                 </div>
@@ -356,27 +357,29 @@ export function PIPVideoWindow({ onClose }: PIPVideoWindowProps) {
               variant="glass"
               size="sm"
               className={`h-9 w-9 p-0 rounded-full backdrop-blur-md ${
-                !isVideoEnabled 
-                  ? 'bg-red-500/30 hover:bg-red-500/40 border-red-500/50' 
+                !hasVideoTrack
+                  ? 'bg-gray-500/30 hover:bg-gray-500/40 border-gray-500/50'
                   : 'bg-white/10 hover:bg-white/20 border-white/20'
               } border shadow-lg`}
-              onClick={toggleVideo}
+              onClick={() => hasVideoTrack ? disableVideo() : enableVideo()}
               disabled={!localStream}
+              title={hasVideoTrack ? 'Turn off camera' : 'Turn on camera'}
             >
-              {!isVideoEnabled ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
+              {!hasVideoTrack ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
             </Button>
             <Button
               variant="glass"
               size="sm"
               className={`h-9 w-9 p-0 rounded-full backdrop-blur-md ${
-                !isAudioEnabled 
-                  ? 'bg-red-500/30 hover:bg-red-500/40 border-red-500/50' 
+                isAudioMuted
+                  ? 'bg-red-500/30 hover:bg-red-500/40 border-red-500/50'
                   : 'bg-white/10 hover:bg-white/20 border-white/20'
               } border shadow-lg`}
               onClick={toggleAudio}
               disabled={!localStream}
+              title={isAudioMuted ? 'Unmute microphone' : 'Mute microphone'}
             >
-              {!isAudioEnabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              {isAudioMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </Button>
             <Button
               variant="glass"

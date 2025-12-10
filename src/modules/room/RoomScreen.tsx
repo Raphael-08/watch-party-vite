@@ -3,6 +3,7 @@ import { HyperbeamCanvas } from './HyperbeamCanvas';
 import { RoomProvider, useRoom } from './RoomContext';
 import { ChatPanel, QuickChatInput } from '../chat';
 import { PIPVideoWindow } from '../video';
+import { useWebRTC } from '../video/useWebRTC';
 import { OverlayControls, CursorIndicator, useCursorTracking, FloatingEmoji, MessageOverlay } from '../overlay';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { isEmojiOnly } from '@/lib/utils';
@@ -25,10 +26,14 @@ interface RoomScreenProps {
  */
 function RoomScreenContent({ onLeaveRoom, onOpenSettings }: { onLeaveRoom?: () => void; onOpenSettings?: () => void }) {
   const { hyperbeamSessionUrl, isConnected, wsClient, userId, sendChatMessage } = useRoom();
+
+  // REDESIGN: WebRTC hook at RoomScreen level for shared state
+  const webrtcControls = useWebRTC();
+
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(false); // Full chat history panel
   const [isQuickChatOpen, setIsQuickChatOpen] = useState(false); // Quick input at bottom-right
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isVideoOpen, setIsVideoOpen] = useState(false); // Start closed, let user manually open
+  const [isVideoOpen, setIsVideoOpen] = useState(true); // REDESIGN: Start open for audio controls
   const [isHyperbeamReady, setIsHyperbeamReady] = useState(false); // Track Hyperbeam iframe load
   const [flyingEmojis, setFlyingEmojis] = useState<Array<{ id: string; emoji: string }>>([]);
   const [visibleOverlayMessages, setVisibleOverlayMessages] = useState<Array<{ id: string; username: string; text: string }>>([]);
@@ -202,6 +207,8 @@ function RoomScreenContent({ onLeaveRoom, onOpenSettings }: { onLeaveRoom?: () =
         isChatOpen={isChatPanelOpen}
         onToggleCamera={handleToggleCamera}
         isCameraOpen={isVideoOpen}
+        onToggleAudio={webrtcControls.toggleAudio}
+        isAudioMuted={webrtcControls.isAudioMuted}
         onToggleFullscreen={handleFullscreenToggle}
         isFullscreen={isFullscreen}
         onLeaveRoom={onLeaveRoom || (() => {})}
@@ -248,6 +255,7 @@ function RoomScreenContent({ onLeaveRoom, onOpenSettings }: { onLeaveRoom?: () =
       {isVideoOpen && (
         <PIPVideoWindow
           onClose={() => setIsVideoOpen(false)}
+          webrtcControls={webrtcControls}
         />
       )}
     </>

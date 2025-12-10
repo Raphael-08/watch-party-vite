@@ -76,9 +76,9 @@ export function useWebRTC() {
   const [connectionState, setConnectionState] = useState<ConnectionStateType>(ConnectionState.IDLE);
   const [error, setError] = useState<string | null>(null);
 
-  // Media control
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  // Media control - REDESIGN: Audio always on, video optional
+  const [hasVideoTrack, setHasVideoTrack] = useState(false); // Video starts OFF
+  const [isAudioMuted, setIsAudioMuted] = useState(false); // Audio starts unmuted
 
   // Connection quality stats
   const [connectionStats, setConnectionStats] = useState<{
@@ -206,30 +206,19 @@ export function useWebRTC() {
   }, [wsClient, roomId, userId, waitForIceGathering, reconnectWithBackoff]);
 
   /**
-   * Initialize local media stream
+   * Initialize local media stream - AUDIO ONLY by default
+   * Video will be added later via enableVideo()
    */
   const initializeLocalStream = useCallback(async () => {
     try {
-      console.log('[WebRTC-SFU] Requesting media access...');
+      console.log('[WebRTC-SFU] Requesting AUDIO-ONLY access...');
 
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720, facingMode: 'user' },
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        });
-      } catch (firstErr) {
-        console.warn('[WebRTC-SFU] Failed with specific constraints, trying basic:', firstErr);
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        } catch (secondErr) {
-          console.warn('[WebRTC-SFU] Failed with video, trying audio-only:', secondErr);
-          stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-          console.log('[WebRTC-SFU] Running in audio-only mode');
-        }
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false, // REDESIGN: Start with audio only
+      });
 
-      console.log('[WebRTC-SFU] ✅ Media access granted:', {
+      console.log('[WebRTC-SFU] ✅ Audio access granted:', {
         video: stream.getVideoTracks().length,
         audio: stream.getAudioTracks().length,
       });
@@ -243,11 +232,11 @@ export function useWebRTC() {
 
       if (err instanceof DOMException) {
         if (err.name === 'NotAllowedError') {
-          setError('Camera/microphone access denied. Please allow permissions.');
+          setError('Microphone access denied. Please allow permissions.');
         } else if (err.name === 'NotFoundError') {
-          setError('No camera or microphone found.');
+          setError('No microphone found.');
         } else if (err.name === 'NotReadableError') {
-          setError('Camera is already in use by another application.');
+          setError('Microphone is already in use by another application.');
         }
       }
 
@@ -705,85 +694,113 @@ export function useWebRTC() {
   }, [cleanupConnection]);
 
   /**
-   * Toggle video - uses removeTrack/addTrack to trigger renegotiation in SFU
-   * CRITICAL: replaceTrack() does NOT trigger renegotiation, causing SFU desync
+   * Enable video - adds video track to existing audio-only connection
+   * REDESIGN: Video is optional, added after audio connection is established
    */
-  const toggleVideo = useCallback(async () => {
-    if (!localStream || !peerConnectionRef.current) return;
+  const enableVideo = useCallback(async () => {
+    if (!localStream || !peerConnectionRef.current) {
+      console.warn('[WebRTC-SFU] Cannot enable video - no stream or peer connection');
+      return;
+    }
+
+    if (hasVideoTrack) {
+      console.log('[WebRTC-SFU] Video already enabled');
+      return;
+    }
 
     const pc = peerConnectionRef.current;
-    const newState = !isVideoEnabled;
-    console.log('[WebRTC-SFU] Toggling video:', newState ? 'ON' : 'OFF');
+    console.log('[WebRTC-SFU] 📹 Enabling video...');
 
-    if (newState) {
-      // Turning video ON - REMOVE old sender and ADD new track
-      // This triggers renegotiation so SFU can forward the new track
-      try {
-        const newStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720, facingMode: 'user' }
-        });
-        const newVideoTrack = newStream.getVideoTracks()[0];
+    try {
+      const videoStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720, facingMode: 'user' }
+      });
+      const videoTrack = videoStream.getVideoTracks()[0];
 
-        // CRITICAL: Remove old sender first (if exists)
-        const oldSender = pc.getSenders().find(s => s.track?.kind === 'video' || s.track === null);
-        if (oldSender) {
-          pc.removeTrack(oldSender);
-          console.log('[WebRTC-SFU] Removed old video sender');
-        }
+      // Add video track to peer connection (triggers renegotiation)
+      pc.addTrack(videoTrack, localStream);
+      console.log('[WebRTC-SFU] ✅ Added video track (triggers renegotiation)');
 
-        // Add new track (this triggers onnegotiationneeded → renegotiation)
-        pc.addTrack(newVideoTrack, localStream);
-        console.log('[WebRTC-SFU] ✅ Added new video track (triggers renegotiation)');
+      // Add to local stream
+      localStream.addTrack(videoTrack);
 
-        // Update local stream
-        const oldVideoTrack = localStream.getVideoTracks()[0];
-        if (oldVideoTrack) {
-          localStream.removeTrack(oldVideoTrack);
-          oldVideoTrack.stop();
-        }
-        localStream.addTrack(newVideoTrack);
-
-        setIsVideoEnabled(true);
-
-        // Note: Renegotiation happens automatically via onnegotiationneeded event
-        // SFU's OnTrack handler will fire and forward the new track to all peers
-      } catch (err) {
-        console.error('[WebRTC-SFU] Failed to enable video:', err);
-        setError('Failed to start camera. Please check permissions.');
-      }
-    } else {
-      // Turning video OFF - REMOVE the sender entirely
-      // This triggers renegotiation so SFU stops forwarding
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        const sender = pc.getSenders().find(s => s.track === videoTrack);
-        if (sender) {
-          pc.removeTrack(sender);
-          console.log('[WebRTC-SFU] ✅ Removed video sender (triggers renegotiation)');
-        }
-        videoTrack.stop();
-        localStream.removeTrack(videoTrack);
-      }
-      setIsVideoEnabled(false);
-
-      // Note: Renegotiation happens automatically via onnegotiationneeded event
-      // SFU will detect track removal and notify other peers
+      setHasVideoTrack(true);
+      console.log('[WebRTC-SFU] Video enabled - renegotiation will forward to SFU');
+    } catch (err) {
+      console.error('[WebRTC-SFU] Failed to enable video:', err);
+      setError('Failed to start camera. Please check permissions.');
     }
-  }, [localStream, isVideoEnabled]);
+  }, [localStream, hasVideoTrack]);
 
   /**
-   * Toggle audio
+   * Disable video - removes video track from connection
+   * REDESIGN: Audio continues working, only video is removed
    */
-  const toggleAudio = useCallback(() => {
+  const disableVideo = useCallback(() => {
+    if (!localStream || !peerConnectionRef.current) return;
+    if (!hasVideoTrack) {
+      console.log('[WebRTC-SFU] Video already disabled');
+      return;
+    }
+
+    const pc = peerConnectionRef.current;
+    console.log('[WebRTC-SFU] 📹 Disabling video...');
+
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (videoTrack) {
+      // Remove from peer connection (triggers renegotiation)
+      const sender = pc.getSenders().find(s => s.track === videoTrack);
+      if (sender) {
+        pc.removeTrack(sender);
+        console.log('[WebRTC-SFU] ✅ Removed video sender (triggers renegotiation)');
+      }
+
+      // Stop and remove from local stream
+      videoTrack.stop();
+      localStream.removeTrack(videoTrack);
+    }
+
+    setHasVideoTrack(false);
+    console.log('[WebRTC-SFU] Video disabled - audio continues');
+  }, [localStream, hasVideoTrack]);
+
+  /**
+   * Mute audio - just disables the track, doesn't remove it
+   * REDESIGN: Audio track always present, just muted/unmuted
+   */
+  const muteAudio = useCallback(() => {
     if (!localStream) return;
     const audioTrack = localStream.getAudioTracks()[0];
     if (!audioTrack) return;
 
-    const newState = !isAudioEnabled;
-    audioTrack.enabled = newState;
-    setIsAudioEnabled(newState);
-    console.log('[WebRTC-SFU] Audio:', newState ? 'ON' : 'OFF');
-  }, [localStream, isAudioEnabled]);
+    audioTrack.enabled = false;
+    setIsAudioMuted(true);
+    console.log('[WebRTC-SFU] 🔇 Audio muted');
+  }, [localStream]);
+
+  /**
+   * Unmute audio
+   */
+  const unmuteAudio = useCallback(() => {
+    if (!localStream) return;
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (!audioTrack) return;
+
+    audioTrack.enabled = true;
+    setIsAudioMuted(false);
+    console.log('[WebRTC-SFU] 🔊 Audio unmuted');
+  }, [localStream]);
+
+  /**
+   * Toggle audio mute/unmute
+   */
+  const toggleAudio = useCallback(() => {
+    if (isAudioMuted) {
+      unmuteAudio();
+    } else {
+      muteAudio();
+    }
+  }, [isAudioMuted, muteAudio, unmuteAudio]);
 
   /**
    * IMPROVEMENT: Connection quality monitoring
@@ -907,10 +924,15 @@ export function useWebRTC() {
     startConnection,
     stopConnection,
     reconnect,
-    toggleVideo,
-    toggleAudio,
-    isVideoEnabled,
-    isAudioEnabled,
+    // REDESIGN: New video control functions
+    enableVideo,
+    disableVideo,
+    hasVideoTrack,
+    // REDESIGN: New audio control functions
+    muteAudio,
+    unmuteAudio,
+    toggleAudio, // Kept for convenience
+    isAudioMuted,
     hasPartner: hasPartners,
     connectionStats, // NEW: Connection quality stats
   };
