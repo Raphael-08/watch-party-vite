@@ -717,12 +717,16 @@ export function useWebRTC() {
       });
       const videoTrack = videoStream.getVideoTracks()[0];
 
-      // Add video track to peer connection (triggers renegotiation)
-      pc.addTrack(videoTrack, localStream);
-      console.log('[WebRTC-SFU] ✅ Added video track (triggers renegotiation)');
-
-      // Add to local stream
+      // CRITICAL: Add to local stream FIRST (before peer connection)
       localStream.addTrack(videoTrack);
+      console.log('[WebRTC-SFU] Added video track to local stream');
+
+      // Update video element immediately
+      setLocalStream(new MediaStream(localStream.getTracks()));
+
+      // Now add to peer connection (triggers renegotiation)
+      pc.addTrack(videoTrack, localStream);
+      console.log('[WebRTC-SFU] ✅ Added video track to peer connection (triggers renegotiation)');
 
       setHasVideoTrack(true);
       console.log('[WebRTC-SFU] Video enabled - renegotiation will forward to SFU');
@@ -748,16 +752,22 @@ export function useWebRTC() {
 
     const videoTrack = localStream.getVideoTracks()[0];
     if (videoTrack) {
-      // Remove from peer connection (triggers renegotiation)
+      // Remove from peer connection FIRST (triggers renegotiation)
       const sender = pc.getSenders().find(s => s.track === videoTrack);
       if (sender) {
         pc.removeTrack(sender);
         console.log('[WebRTC-SFU] ✅ Removed video sender (triggers renegotiation)');
       }
 
-      // Stop and remove from local stream
-      videoTrack.stop();
+      // Remove from local stream
       localStream.removeTrack(videoTrack);
+
+      // Update video element immediately
+      setLocalStream(new MediaStream(localStream.getTracks()));
+
+      // Stop track LAST (after removal)
+      videoTrack.stop();
+      console.log('[WebRTC-SFU] Video track stopped');
     }
 
     setHasVideoTrack(false);
