@@ -70,6 +70,7 @@ export function useWebRTC() {
   // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [remoteStreamVersion, setRemoteStreamVersion] = useState(0); // Force re-render on track changes
 
   // Connection state
   const [connectionState, setConnectionState] = useState<ConnectionStateType>(ConnectionState.IDLE);
@@ -286,6 +287,12 @@ export function useWebRTC() {
               newStreams.delete(streamId);
               return newStreams;
             });
+            // CRITICAL: Force React re-render when stream is removed
+            setRemoteStreamVersion(v => v + 1);
+          } else {
+            // Track removed but stream still has other tracks - still need to update
+            console.log(`[WebRTC-SFU] Track removed but stream has ${activeTracks.length} active tracks remaining`);
+            setRemoteStreamVersion(v => v + 1);
           }
         };
 
@@ -293,6 +300,8 @@ export function useWebRTC() {
         setRemoteStreams((prev) => {
           const newStreams = new Map(prev);
           const existingStream = newStreams.get(streamId);
+
+          let streamToUse = stream;
 
           if (existingStream) {
             console.log(`[WebRTC-SFU] Updating existing stream ${streamId} with new track ${event.track.kind}`);
@@ -305,10 +314,14 @@ export function useWebRTC() {
             // Add new track
             existingStream.addTrack(event.track);
             console.log(`[WebRTC-SFU] Added new ${event.track.kind} track to stream`);
+            streamToUse = existingStream; // CRITICAL: Use the modified existing stream
+
+            // CRITICAL: Force React re-render by incrementing version
+            setRemoteStreamVersion(v => v + 1);
           }
 
-          newStreams.set(streamId, stream);
-          console.log('[WebRTC-SFU] Remote streams:', newStreams.size, 'tracks:', stream.getTracks().length);
+          newStreams.set(streamId, streamToUse);
+          console.log('[WebRTC-SFU] Remote streams:', newStreams.size, 'tracks:', streamToUse.getTracks().length);
           return newStreams;
         });
 
@@ -881,7 +894,7 @@ export function useWebRTC() {
   // First remote stream for backwards compatibility
   const firstRemoteStream = useMemo(() => {
     return remoteStreams.size > 0 ? Array.from(remoteStreams.values())[0] : null;
-  }, [remoteStreams]);
+  }, [remoteStreams, remoteStreamVersion]); // Include version to detect track changes
 
   return {
     localStream,
