@@ -1,13 +1,11 @@
 /**
  * Video Module
  *
- * Provides WebRTC video functionality with Picture-in-Picture UI.
+ * Provides WebRTC P2P video functionality with Picture-in-Picture UI.
  *
- * Available hooks:
- * - useSimplePeer: SimplePeer-based P2P mesh connections (recommended for 2-4 users)
- * - useWebRTC: Custom SFU-based connections (for larger groups, requires Go SFU backend)
+ * Using SimplePeer for simplified peer-to-peer mesh connections.
+ * Optimal for 2-4 user watch parties with low latency.
  */
 
 export { PIPVideoWindow } from './PIPVideoWindow';
-export { useWebRTC } from './useWebRTC';
 export { useSimplePeer } from './useSimplePeer';

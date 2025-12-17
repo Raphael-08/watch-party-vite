@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 
 interface PIPVideoWindowProps {
   onClose?: () => void;
-  webrtcControls: ReturnType<typeof import('./useWebRTC').useWebRTC>;
+  webrtcControls: ReturnType<typeof import('./useSimplePeer').useSimplePeer>;
 }
 
 /**
