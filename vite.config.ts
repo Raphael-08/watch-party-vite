@@ -35,6 +35,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  define: {
+    // Fix for SimplePeer - provide Node.js globals for browser
+    'process.env': {},
+    'global': 'globalThis',
+  },
   base: './',
   server: {
     port: 5173,
