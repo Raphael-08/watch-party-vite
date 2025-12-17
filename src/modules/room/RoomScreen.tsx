@@ -4,7 +4,7 @@ import { RoomProvider, useRoom } from './RoomContext';
 import { ChatPanel, QuickChatInput } from '../chat';
 import { PIPVideoWindow } from '../video';
 import { useSimplePeer } from '../video/useSimplePeer';
-import { OverlayControls, CursorIndicator, useCursorTracking, FloatingEmoji, MessageOverlay } from '../overlay';
+import { OverlayControls, FloatingEmoji, MessageOverlay } from '../overlay';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { isEmojiOnly } from '@/lib/utils';
 import type { ChatMessageBroadcastPayload } from '@/types/messages';
@@ -42,8 +42,8 @@ function RoomScreenContent({ onLeaveRoom, onOpenSettings }: { onLeaveRoom?: () =
   // Calculate bottom padding based on navbar visibility
   const NAVBAR_HEIGHT = 80; // Height of navbar when visible (h-20 = 5rem = 80px + padding)
 
-  // Initialize cursor tracking
-  useCursorTracking({ throttleMs: 50 });
+  // Cursor tracking disabled to reduce network traffic
+  // useCursorTracking({ throttleMs: 50 });
 
   // Clear overlay messages when any chat is opened
   useEffect(() => {
@@ -216,8 +216,8 @@ function RoomScreenContent({ onLeaveRoom, onOpenSettings }: { onLeaveRoom?: () =
         onVisibilityChange={setIsNavbarVisible}
       />
 
-      {/* Cursor Indicator - Shows partner's cursor position */}
-      <CursorIndicator />
+      {/* Cursor Indicator - Disabled to reduce network traffic */}
+      {/* <CursorIndicator /> */}
 
       {/* Chat Panel - Full chat history in sidebar (opened via top nav button) */}
       <ChatPanel

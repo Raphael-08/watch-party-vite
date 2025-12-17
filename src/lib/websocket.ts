@@ -146,13 +146,18 @@ export class WebSocketClient {
   }
 
   send(type: string, payload?: any) {
-    console.log('[WebSocketClient] 📤 Sending event:', type, 'connected:', this.socket.connected, 'payload:', payload);
+    // Skip logging for high-frequency cursor events
+    if (type !== 'cursor-moved') {
+      console.log('[WebSocketClient] 📤 Sending event:', type, 'connected:', this.socket.connected, 'payload:', payload);
+    }
     if (!this.socket.connected) {
       console.error('[WebSocketClient] ❌ Cannot send - socket not connected!');
       return;
     }
     this.socket.emit(type, payload)
-    console.log('[WebSocketClient] ✅ Event emitted');
+    if (type !== 'cursor-moved') {
+      console.log('[WebSocketClient] ✅ Event emitted');
+    }
   }
 
   emit(event: string, payload?: any) {

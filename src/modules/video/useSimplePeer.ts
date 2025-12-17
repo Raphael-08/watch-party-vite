@@ -281,7 +281,7 @@ export function useSimplePeer() {
         throw new Error('Failed to get local stream');
       }
 
-      // Create peer connection for each partner
+      // Create peer connection for each partner (ONLY if initiator)
       for (const partner of partners) {
         // Skip if peer already exists
         if (peersRef.current.has(partner.userId)) {
@@ -291,6 +291,15 @@ export function useSimplePeer() {
 
         // Determine who is initiator (user with lower ID)
         const initiator = userId < partner.userId;
+
+        // ONLY create peer if we are the initiator
+        // Non-initiator waits for signal and creates peer in handleSignal
+        if (!initiator) {
+          console.log(`[SimplePeer] Skipping ${partner.username} - not initiator (will wait for offer)`);
+          continue;
+        }
+
+        console.log(`[SimplePeer] Creating peer for ${partner.username} as INITIATOR`);
 
         // Create peer
         const peer = createPeer(partner.userId, partner.username, initiator, stream);
@@ -329,9 +338,10 @@ export function useSimplePeer() {
         return;
       }
 
-      console.log(`[SimplePeer] Creating peer for incoming connection from ${partner.username}`);
+      console.log(`[SimplePeer] Creating peer for incoming connection from ${partner.username} (non-initiator)`);
 
-      const initiator = userId < fromUserId;
+      // When receiving a signal first, we are NOT the initiator
+      const initiator = false;
       const peer = createPeer(fromUserId, partner.username, initiator, localStreamRef.current);
 
       peerConnection = {
@@ -576,12 +586,20 @@ export function useSimplePeer() {
       }
     });
 
-    // Add peers that joined
+    // Add peers that joined (ONLY if we are initiator)
     partners.forEach((partner) => {
       if (!peersRef.current.has(partner.userId) && localStreamRef.current) {
-        console.log(`[SimplePeer] User ${partner.username} joined - creating peer`);
-
         const initiator = userId < partner.userId;
+
+        // ONLY create peer if we are the initiator
+        // Non-initiator waits for signal and creates peer in handleSignal
+        if (!initiator) {
+          console.log(`[SimplePeer] User ${partner.username} joined - waiting for offer (non-initiator)`);
+          return;
+        }
+
+        console.log(`[SimplePeer] User ${partner.username} joined - creating peer as INITIATOR`);
+
         const peer = createPeer(partner.userId, partner.username, initiator, localStreamRef.current);
 
         peersRef.current.set(partner.userId, {
