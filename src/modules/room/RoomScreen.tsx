@@ -3,7 +3,7 @@ import { HyperbeamCanvas } from './HyperbeamCanvas';
 import { RoomProvider, useRoom } from './RoomContext';
 import { ChatPanel, QuickChatInput } from '../chat';
 import { PIPVideoWindow } from '../video';
-import { useWebRTC } from '../video/useWebRTC';
+import { useSimplePeer } from '../video/useSimplePeer';
 import { OverlayControls, CursorIndicator, useCursorTracking, FloatingEmoji, MessageOverlay } from '../overlay';
 import { LoadingScreen } from '@/components/LoadingScreen';
 import { isEmojiOnly } from '@/lib/utils';
@@ -27,8 +27,8 @@ interface RoomScreenProps {
 function RoomScreenContent({ onLeaveRoom, onOpenSettings }: { onLeaveRoom?: () => void; onOpenSettings?: () => void }) {
   const { hyperbeamSessionUrl, isConnected, wsClient, userId, sendChatMessage } = useRoom();
 
-  // REDESIGN: WebRTC hook at RoomScreen level for shared state
-  const webrtcControls = useWebRTC();
+  // SimplePeer P2P WebRTC hook for shared state
+  const webrtcControls = useSimplePeer();
 
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(false); // Full chat history panel
   const [isQuickChatOpen, setIsQuickChatOpen] = useState(false); // Quick input at bottom-right

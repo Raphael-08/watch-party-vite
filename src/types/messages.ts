@@ -73,6 +73,13 @@ export interface WebRTCICECandidateBroadcastPayload {
   candidate: any
 }
 
+// SimplePeer signaling payloads (includes targetUserId for routing)
+export interface SimplePeerSignalPayload {
+  userId: string // Sender ID
+  targetUserId: string // Recipient ID
+  signal: any // SimplePeer signal data
+}
+
 // SFU-specific WebRTC payloads (server sends answer directly, not broadcast)
 export interface WebRTCAnswerPayload {
   roomId: string
