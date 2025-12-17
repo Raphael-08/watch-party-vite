@@ -1,7 +1,7 @@
 {
   "name": "watch-party-vite",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "author": "Your Name",
   "description": "Watch videos together in sync with friends",
   "main": "dist-electron/main.js",
@@ -129,6 +129,7 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
     "vite-plugin-electron": "^0.29.0",
-    "vite-plugin-electron-renderer": "^0.14.6"
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "vite-plugin-node-polyfills": "^0.24.0"
   }
 }
