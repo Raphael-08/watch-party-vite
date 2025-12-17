@@ -58,7 +58,7 @@ export function PIPVideoWindow({ onClose, webrtcControls }: PIPVideoWindowProps)
       console.log('[PIPVideoWindow] Attaching local stream to video element');
       localVideoRef.current.srcObject = localStream;
     }
-  }, [localStream, isMinimized]); // Include isMinimized to refresh when maximizing
+  }, [localStream, isMinimized, showSelfCam]); // Re-attach when showing self cam
 
   // Monitor remote stream for track changes
   useEffect(() => {
@@ -242,10 +242,10 @@ export function PIPVideoWindow({ onClose, webrtcControls }: PIPVideoWindowProps)
       onMouseEnter={() => setShowControls(true)}
       onMouseLeave={() => setShowControls(false)}
     >
-      {/* Auto-hiding Header - appears on hover */}
-      <div 
+      {/* Auto-hiding Header - appears on hover (always visible when minimized) */}
+      <div
         className={`absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-3 py-2 bg-gradient-to-b from-black/60 to-transparent backdrop-blur-sm transition-all duration-300 ${
-          showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'
+          showControls || isMinimized ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'
         }`}
       >
         <div className="flex items-center gap-2">
