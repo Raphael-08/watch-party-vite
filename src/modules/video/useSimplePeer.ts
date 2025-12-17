@@ -2,40 +2,34 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import SimplePeer from 'simple-peer';
 import { useRoom } from '../room/RoomContext';
 import { WSEventTypes } from '@/types/messages';
-import type { ServerMessage, User } from '@/types/messages';
+import type { ServerMessage } from '@/types/messages';
 
 /**
  * SimplePeer Configuration
  * Using the same STUN/TURN servers as before
  */
-const PEER_CONFIG: SimplePeer.Options = {
-  iceServers: [
-    // STUN servers for NAT discovery
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    // Primary TURN server with TCP/TLS fallbacks
-    {
-      urls: [
-        'turn:relay1.expressturn.com:3478',
-        'turn:relay1.expressturn.com:80?transport=tcp',
-        'turns:relay1.expressturn.com:443?transport=tcp',
-      ],
-      username: 'efPU52K4SLOQ34W2QY',
-      credential: '1TJPNFxHKXr7feIz',
-    },
-    // Fallback TURN server
-    {
-      urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ],
-  // SimplePeer-specific options
-  trickle: true, // Enable trickle ICE
-  reconnectTimer: 3000, // Reconnect after 3 seconds
-  iceTransportPolicy: 'all', // Use all available candidates
-};
+const ICE_SERVERS: RTCIceServer[] = [
+  // STUN servers for NAT discovery
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  // Primary TURN server with TCP/TLS fallbacks
+  {
+    urls: [
+      'turn:relay1.expressturn.com:3478',
+      'turn:relay1.expressturn.com:80?transport=tcp',
+      'turns:relay1.expressturn.com:443?transport=tcp',
+    ],
+    username: 'efPU52K4SLOQ34W2QY',
+    credential: '1TJPNFxHKXr7feIz',
+  },
+  // Fallback TURN server
+  {
+    urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
 
 /**
  * Connection state for tracking peer status
@@ -72,7 +66,7 @@ interface PeerConnection {
  * - Supports audio-only by default, video on-demand
  */
 export function useSimplePeer() {
-  const { roomId, userId, wsClient, users } = useRoom();
+  const { userId, wsClient, users } = useRoom();
 
   // Local media stream
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -149,11 +143,12 @@ export function useSimplePeer() {
     console.log(`[SimplePeer] Creating peer connection to ${remoteUsername} (${remoteUserId}) - initiator: ${initiator}`);
 
     const peer = new SimplePeer({
-      ...PEER_CONFIG,
       initiator,
       stream, // Pass local stream
+      trickle: true, // Enable trickle ICE
       config: {
-        iceServers: PEER_CONFIG.iceServers,
+        iceServers: ICE_SERVERS,
+        iceTransportPolicy: 'all',
       },
     });
 
