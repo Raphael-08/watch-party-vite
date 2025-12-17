@@ -431,18 +431,13 @@ export function useSimplePeer() {
       localStreamRef.current.addTrack(videoTrack);
       setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
 
-      // Add track to all peer connections
-      peersRef.current.forEach((peerConnection) => {
-        try {
-          peerConnection.peer.addTrack(videoTrack, localStreamRef.current!);
-          console.log(`[SimplePeer] Added video track to peer ${peerConnection.username}`);
-        } catch (err) {
-          console.error(`[SimplePeer] Failed to add video track to ${peerConnection.username}:`, err);
-        }
-      });
+      // Note: SimplePeer doesn't support dynamic track addition
+      // Video will only work for NEW peer connections
+      // Existing peers will remain audio-only
+      console.log('[SimplePeer] Video track added to local stream (new peers will receive it)');
 
       setHasVideoTrack(true);
-      console.log('[SimplePeer] ✅ Video enabled');
+      console.log('[SimplePeer] ✅ Video enabled for new connections');
     } catch (err) {
       console.error('[SimplePeer] Failed to enable video:', err);
       setError('Failed to start camera. Please check permissions.');
@@ -462,15 +457,9 @@ export function useSimplePeer() {
 
     const videoTrack = localStreamRef.current.getVideoTracks()[0];
     if (videoTrack) {
-      // Remove from all peer connections
-      peersRef.current.forEach((peerConnection) => {
-        try {
-          peerConnection.peer.removeTrack(videoTrack, localStreamRef.current!);
-          console.log(`[SimplePeer] Removed video track from peer ${peerConnection.username}`);
-        } catch (err) {
-          console.error(`[SimplePeer] Failed to remove video track from ${peerConnection.username}:`, err);
-        }
-      });
+      // Note: SimplePeer doesn't support dynamic track removal
+      // Just stop and remove from local stream
+      // Existing peers will keep receiving video until reconnection
 
       // Remove from local stream
       localStreamRef.current.removeTrack(videoTrack);
