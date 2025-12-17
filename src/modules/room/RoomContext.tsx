@@ -244,8 +244,13 @@ export function RoomProvider({ roomId, userId, username, wsUrl, initialHyperbeam
         // Backend will emit 'room-joined' when the room is successfully created/joined
         console.log('[Room] Sending join-room event with roomCode:', roomId);
         console.log('[Room] Socket still connected:', client.isConnected);
+
+        // Retrieve password from sessionStorage if it was set during room creation/join
+        const password = sessionStorage.getItem(`room_password_${roomId}`) || '';
+
         client.send('join-room', {
           roomCode: roomId,
+          password: password,
         });
         console.log('[Room] ✅ join-room event sent, waiting for room-joined confirmation...');
       } catch (error) {
