@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, protocol, ipcMain, session } from 'electron'
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import dotenv from 'dotenv';
+import fs from 'fs';
 
 // Load environment variables from project root
 dotenv.config();
@@ -56,21 +57,57 @@ let splashWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
 let isCreatingWindow = false;
 
-// Create splash window for update progress
+// Helper function to check if we should skip update check (just updated)
+function shouldSkipUpdateCheck(): boolean {
+  try {
+    const userDataPath = app.getPath('userData');
+    const updateFlagPath = path.join(userDataPath, '.just-updated');
+
+    if (fs.existsSync(updateFlagPath)) {
+      console.log('[AutoUpdater] =================================================');
+      console.log('[AutoUpdater] ⏭️  Skipping update check (just updated)');
+      console.log('[AutoUpdater] Flag file found:', updateFlagPath);
+      console.log('[AutoUpdater] =================================================');
+
+      // Delete the flag file for next launch
+      fs.unlinkSync(updateFlagPath);
+      return true;
+    }
+  } catch (err) {
+    console.error('[AutoUpdater] Error checking update flag:', err);
+  }
+  return false;
+}
+
+// Helper function to create flag file after update install
+function createUpdateFlag() {
+  try {
+    const userDataPath = app.getPath('userData');
+    const updateFlagPath = path.join(userDataPath, '.just-updated');
+    fs.writeFileSync(updateFlagPath, Date.now().toString());
+    console.log('[AutoUpdater] Created update flag:', updateFlagPath);
+  } catch (err) {
+    console.error('[AutoUpdater] Error creating update flag:', err);
+  }
+}
+
+// Create splash window for update progress (Discord-style)
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
-    width: 400,
-    height: 300,
+    width: 360,
+    height: 180,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
+    resizable: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
-  // Create a simple HTML for splash screen
+  // Discord-style minimal update window
   const splashHTML = `
     <!DOCTYPE html>
     <html>
@@ -84,72 +121,97 @@ function createSplashWindow() {
             align-items: center;
             justify-content: center;
             background: transparent;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            -webkit-app-region: drag;
+            cursor: move;
           }
           .container {
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            padding: 40px;
+            background: #202225;
+            border-radius: 8px;
+            padding: 24px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-          }
-          .logo {
-            font-size: 48px;
-            margin-bottom: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            position: relative;
           }
           .title {
-            color: white;
-            font-size: 24px;
+            color: #ffffff;
+            font-size: 16px;
             font-weight: 600;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            text-align: center;
           }
           .status {
-            color: rgba(255,255,255,0.8);
-            font-size: 14px;
-            margin-bottom: 20px;
+            color: #b9bbbe;
+            font-size: 13px;
+            margin-bottom: 16px;
+            text-align: center;
+          }
+          .progress-container {
+            width: 100%;
+            margin-bottom: 8px;
           }
           .progress-bar {
             width: 100%;
-            height: 4px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 2px;
+            height: 8px;
+            background: #2f3136;
+            border-radius: 4px;
             overflow: hidden;
-            margin-bottom: 10px;
           }
           .progress-fill {
             height: 100%;
-            background: white;
-            border-radius: 2px;
+            background: #5865f2;
+            border-radius: 4px;
             transition: width 0.3s ease;
             width: 0%;
           }
           .progress-text {
-            color: rgba(255,255,255,0.6);
-            font-size: 12px;
+            color: #72767d;
+            font-size: 11px;
+            text-align: center;
+            margin-top: 4px;
+          }
+          .restart-button {
+            -webkit-app-region: no-drag;
+            cursor: pointer;
+            margin-top: 16px;
+            padding: 10px 24px;
+            background: #5865f2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            display: none;
+            transition: background 0.2s;
+          }
+          .restart-button:hover {
+            background: #4752c4;
           }
           @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.6; }
           }
           .checking {
-            animation: pulse 1.5s ease-in-out infinite;
+            animation: pulse 2s ease-in-out infinite;
           }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="logo">🎬</div>
           <div class="title">Watch Party</div>
           <div class="status checking" id="status">Checking for updates...</div>
-          <div class="progress-bar">
-            <div class="progress-fill" id="progress"></div>
+          <div class="progress-container">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progress"></div>
+            </div>
+            <div class="progress-text" id="progress-text"></div>
           </div>
-          <div class="progress-text" id="progress-text">0%</div>
+          <button class="restart-button" id="restart-btn" onclick="window.electronAPI?.restartApp()">Restart to Update</button>
         </div>
       </body>
     </html>
@@ -159,7 +221,7 @@ function createSplashWindow() {
 }
 
 // Update splash window status
-function updateSplashStatus(status: string, progress?: number) {
+function updateSplashStatus(status: string, progress?: number, showRestartButton = false) {
   if (!splashWindow || splashWindow.isDestroyed()) return;
 
   splashWindow.webContents.executeJavaScript(`
@@ -168,6 +230,9 @@ function updateSplashStatus(status: string, progress?: number) {
     ${progress !== undefined ? `
       document.getElementById('progress').style.width = '${progress}%';
       document.getElementById('progress-text').textContent = '${Math.round(progress)}%';
+    ` : ''}
+    ${showRestartButton ? `
+      document.getElementById('restart-btn').style.display = 'block';
     ` : ''}
   `);
 }
@@ -227,18 +292,15 @@ autoUpdater.on('download-progress', (progress) => {
 });
 
 autoUpdater.on('update-downloaded', (info) => {
-  console.log('[AutoUpdater] Update downloaded:', info.version);
-  console.log('[AutoUpdater] Update will be installed on quit');
+  console.log('[AutoUpdater] =================================================');
+  console.log('[AutoUpdater] ✅ UPDATE DOWNLOADED!');
+  console.log('[AutoUpdater] Downloaded version:', info.version);
+  console.log('[AutoUpdater] Update will be installed on restart');
+  console.log('[AutoUpdater] Waiting for user to click restart...');
+  console.log('[AutoUpdater] =================================================');
   if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Update ready! Restarting...', 100);
-    setTimeout(() => {
-      if (splashWindow && !splashWindow.isDestroyed()) {
-        splashWindow.close();
-        splashWindow = null;
-      }
-      // Quit and install the update
-      autoUpdater.quitAndInstall(false, true);
-    }, 1000);
+    // Show restart button instead of auto-restarting (Discord-style)
+    updateSplashStatus('Update ready!', 100, true);
   }
 });
 
@@ -358,19 +420,25 @@ app.whenReady().then(() => {
 
   // In production, show splash and check for updates (Discord-style)
   if (!isDev) {
-    createSplashWindow();
-    // Check for updates after splash window is ready
-    setTimeout(() => {
-      autoUpdater.checkForUpdates().catch((err) => {
-        console.error('[AutoUpdater] Failed to check for updates:', err);
-        // On error, close splash and launch app
-        if (splashWindow && !splashWindow.isDestroyed()) {
-          splashWindow.close();
-          splashWindow = null;
-        }
-        createWindow();
-      });
-    }, 1000);
+    // Check if we should skip update check (just updated)
+    if (shouldSkipUpdateCheck()) {
+      // Skip update check and launch directly
+      createWindow();
+    } else {
+      createSplashWindow();
+      // Check for updates after splash window is ready
+      setTimeout(() => {
+        autoUpdater.checkForUpdates().catch((err) => {
+          console.error('[AutoUpdater] Failed to check for updates:', err);
+          // On error, close splash and launch app
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
+          createWindow();
+        });
+      }, 1000);
+    }
   } else {
     // In development, launch directly
     createWindow();
@@ -407,6 +475,15 @@ app.whenReady().then(() => {
   ipcMain.on('check-updates', () => {
     console.log('[AutoUpdater] Manual update check requested');
     autoUpdater.checkForUpdates();
+  });
+
+  // Handle restart to install update (from splash window)
+  ipcMain.on('restart-app', () => {
+    console.log('[AutoUpdater] User clicked restart button');
+    console.log('[AutoUpdater] Quitting and installing update...');
+    // Create flag to skip update check after restart
+    createUpdateFlag();
+    autoUpdater.quitAndInstall(false, true);
   });
 
   app.on('activate', () => {
