@@ -327,34 +327,39 @@ autoUpdater.on('update-downloaded', (info) => {
 
     // Wait a moment to show the installing message, then quit and install
     setTimeout(() => {
-      console.log('[AutoUpdater] Quitting and installing update...');
+      console.log('[AutoUpdater] Preparing to install update...');
       // Create flag to skip update check after restart
       createUpdateFlag();
 
-      // Close ALL windows first to ensure clean quit
+      // CRITICAL: Close ALL windows and wait for them to fully close
+      console.log('[AutoUpdater] Closing all windows...');
+
       if (splashWindow && !splashWindow.isDestroyed()) {
-        splashWindow.close();
+        splashWindow.destroy(); // Force destroy instead of close
         splashWindow = null;
       }
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.close();
+        mainWindow.destroy(); // Force destroy instead of close
         mainWindow = null;
       }
 
-      // Close all other windows
+      // Destroy all other windows
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) {
-          win.close();
+          win.destroy();
         }
       });
 
-      // Quit and install with silent mode
-      // isSilent=true: Install without user interaction (NSIS will still run but silently)
-      // isForceRunAfter=true: Automatically restart app after install
-      setImmediate(() => {
-        autoUpdater.quitAndInstall(true, true);
-      });
-    }, 1500);
+      // Wait for windows to fully close before starting installer
+      setTimeout(() => {
+        console.log('[AutoUpdater] All windows closed. Starting installer...');
+
+        // Quit and install
+        // isSilent=false: Show installer UI to avoid "failed to uninstall" errors
+        // isForceRunAfter=true: Automatically restart app after install
+        autoUpdater.quitAndInstall(false, true);
+      }, 1000);
+    }, 2000);
   }
 });
 
