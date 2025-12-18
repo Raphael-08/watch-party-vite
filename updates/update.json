@@ -1,6 +1,6 @@
 {
   "name": "Watch Party",
-  "version": "1.5.3",
-  "asar": "https://github.com/Raphael-08/watch-party-vite/releases/download/v1.5.3/app.asar",
-  "info": "Fixed freeze on second user join - added timeouts to getUserMedia and Hyperbeam"
+  "version": "1.5.4",
+  "asar": "https://github.com/Raphael-08/watch-party-vite/releases/download/v1.5.4/app.asar",
+  "info": "Reverted to v1.2.6 working code - removed timeout additions that may have caused issues"
 }

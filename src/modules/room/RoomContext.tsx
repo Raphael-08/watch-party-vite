@@ -128,18 +128,11 @@ export function RoomProvider({ roomId, userId, username, wsUrl, initialHyperbeam
                     useProduction: useProduction
                   };
 
-                  // Add 30 second timeout to Hyperbeam session creation
-                  const controller = new AbortController();
-                  const timeoutId = setTimeout(() => controller.abort(), 30000);
-
                   const response = await fetch(`${wsUrl}/api/hyperbeam/session`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody),
-                    signal: controller.signal,
                   });
-
-                  clearTimeout(timeoutId);
 
                   if (!response.ok) {
                     const errorText = await response.text();
