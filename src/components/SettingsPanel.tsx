@@ -67,7 +67,7 @@ export default function SettingsPanel() {
     kiosk: false,  // Premium feature - disabled by default
     dark: true,
     webgl: true,
-    adblock: true,
+    adblock: false,  // Disabled by default for test key
     draw: false,
     useTag: false,  // Premium feature - disabled by default
     resolution: '720p',  // Default to 720p (standard)
@@ -779,7 +779,7 @@ export default function SettingsPanel() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Version</span>
-            <Badge variant="secondary" className="text-xs">1.3.2</Badge>
+            <Badge variant="secondary" className="text-xs">1.3.3</Badge>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Built with</span>

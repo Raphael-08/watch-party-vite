@@ -330,10 +330,31 @@ autoUpdater.on('update-downloaded', (info) => {
       console.log('[AutoUpdater] Quitting and installing update...');
       // Create flag to skip update check after restart
       createUpdateFlag();
-      // Quit and install immediately - this will do a differential update (ASAR patching)
-      // NOT run the installer again
-      autoUpdater.quitAndInstall(false, true);
-    }, 1000);
+
+      // Close ALL windows first to ensure clean quit
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.close();
+        mainWindow = null;
+      }
+
+      // Close all other windows
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          win.close();
+        }
+      });
+
+      // Quit and install with silent mode
+      // isSilent=true: Install without user interaction (NSIS will still run but silently)
+      // isForceRunAfter=true: Automatically restart app after install
+      setImmediate(() => {
+        autoUpdater.quitAndInstall(true, true);
+      });
+    }, 1500);
   }
 });
 
