@@ -779,7 +779,7 @@ export default function SettingsPanel() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Version</span>
-            <Badge variant="secondary" className="text-xs">1.2.8</Badge>
+            <Badge variant="secondary" className="text-xs">1.2.9</Badge>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Built with</span>

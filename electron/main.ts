@@ -94,8 +94,8 @@ function createUpdateFlag() {
 // Create splash window for update progress (Discord-style)
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
-    width: 360,
-    height: 180,
+    width: 400,
+    height: 300,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -107,7 +107,7 @@ function createSplashWindow() {
     },
   });
 
-  // Discord-style minimal update window
+  // Discord-style minimal update window with purple/pink gradient
   const splashHTML = `
     <!DOCTYPE html>
     <html>
@@ -121,97 +121,122 @@ function createSplashWindow() {
             align-items: center;
             justify-content: center;
             background: transparent;
-            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-family: 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif;
             -webkit-app-region: drag;
             cursor: move;
           }
           .container {
             width: 100%;
             height: 100%;
-            background: #202225;
-            border-radius: 8px;
-            padding: 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            border-radius: 12px;
+            padding: 32px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
             position: relative;
+          }
+          .logo {
+            width: 64px;
+            height: 64px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+            font-size: 32px;
+            backdrop-filter: blur(10px);
           }
           .title {
             color: #ffffff;
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 8px;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
             text-align: center;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
           }
           .status {
-            color: #b9bbbe;
-            font-size: 13px;
-            margin-bottom: 16px;
+            color: rgba(255,255,255,0.9);
+            font-size: 15px;
+            margin-bottom: 24px;
             text-align: center;
+            min-height: 22px;
+          }
+          .spinner {
+            width: 40px;
+            height: 40px;
+            margin-bottom: 20px;
+            display: none;
+          }
+          .spinner.active {
+            display: block;
+          }
+          .spinner-circle {
+            width: 100%;
+            height: 100%;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+          }
+          @keyframes spin {
+            to { transform: rotate(360deg); }
           }
           .progress-container {
             width: 100%;
-            margin-bottom: 8px;
+            display: none;
+          }
+          .progress-container.active {
+            display: block;
           }
           .progress-bar {
             width: 100%;
-            height: 8px;
-            background: #2f3136;
-            border-radius: 4px;
+            height: 6px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
             overflow: hidden;
+            margin-bottom: 8px;
           }
           .progress-fill {
             height: 100%;
-            background: #5865f2;
-            border-radius: 4px;
+            background: #ffffff;
+            border-radius: 3px;
             transition: width 0.3s ease;
             width: 0%;
+            box-shadow: 0 0 10px rgba(255,255,255,0.5);
           }
           .progress-text {
-            color: #72767d;
-            font-size: 11px;
+            color: rgba(255,255,255,0.8);
+            font-size: 13px;
             text-align: center;
-            margin-top: 4px;
-          }
-          .restart-button {
-            -webkit-app-region: no-drag;
-            cursor: pointer;
-            margin-top: 16px;
-            padding: 10px 24px;
-            background: #5865f2;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-size: 14px;
             font-weight: 500;
-            display: none;
-            transition: background 0.2s;
-          }
-          .restart-button:hover {
-            background: #4752c4;
           }
           @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
+            50% { opacity: 0.7; }
           }
-          .checking {
+          .pulsing {
             animation: pulse 2s ease-in-out infinite;
           }
         </style>
       </head>
       <body>
         <div class="container">
+          <div class="logo">🎬</div>
           <div class="title">Watch Party</div>
-          <div class="status checking" id="status">Checking for updates...</div>
-          <div class="progress-container">
+          <div class="spinner active" id="spinner">
+            <div class="spinner-circle"></div>
+          </div>
+          <div class="status pulsing" id="status">Checking for updates...</div>
+          <div class="progress-container" id="progress-container">
             <div class="progress-bar">
               <div class="progress-fill" id="progress"></div>
             </div>
-            <div class="progress-text" id="progress-text"></div>
+            <div class="progress-text" id="progress-text">0%</div>
           </div>
-          <button class="restart-button" id="restart-btn" onclick="window.electronAPI?.restartApp()">Restart to Update</button>
         </div>
       </body>
     </html>
@@ -221,18 +246,32 @@ function createSplashWindow() {
 }
 
 // Update splash window status
-function updateSplashStatus(status: string, progress?: number, showRestartButton = false) {
+function updateSplashStatus(status: string, progress?: number, showSpinner = true) {
   if (!splashWindow || splashWindow.isDestroyed()) return;
 
   splashWindow.webContents.executeJavaScript(`
-    document.getElementById('status').textContent = '${status}';
-    document.getElementById('status').classList.remove('checking');
+    const statusEl = document.getElementById('status');
+    const spinnerEl = document.getElementById('spinner');
+    const progressContainer = document.getElementById('progress-container');
+    const progressFill = document.getElementById('progress');
+    const progressText = document.getElementById('progress-text');
+
+    // Update status text
+    statusEl.textContent = '${status}';
+
+    // Toggle spinner and progress bar
+    if (${showSpinner}) {
+      spinnerEl.classList.add('active');
+      progressContainer.classList.remove('active');
+    } else {
+      spinnerEl.classList.remove('active');
+      progressContainer.classList.add('active');
+    }
+
+    // Update progress if provided
     ${progress !== undefined ? `
-      document.getElementById('progress').style.width = '${progress}%';
-      document.getElementById('progress-text').textContent = '${Math.round(progress)}%';
-    ` : ''}
-    ${showRestartButton ? `
-      document.getElementById('restart-btn').style.display = 'block';
+      progressFill.style.width = '${progress}%';
+      progressText.textContent = '${Math.round(progress)}%';
     ` : ''}
   `);
 }
@@ -244,7 +283,7 @@ autoUpdater.on('checking-for-update', () => {
   console.log('[AutoUpdater] Current version:', app.getVersion());
   console.log('[AutoUpdater] =================================================');
   if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Checking for updates...');
+    updateSplashStatus('Checking for updates...', undefined, true);
   }
 });
 
@@ -258,7 +297,7 @@ autoUpdater.on('update-available', (info) => {
   console.log('[AutoUpdater] Starting download...');
   console.log('[AutoUpdater] =================================================');
   if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus(`Downloading v${info.version}...`, 0);
+    updateSplashStatus(`Downloading v${info.version}...`, 0, false);
   }
 });
 
@@ -270,7 +309,7 @@ autoUpdater.on('update-not-available', (info) => {
   console.log('[AutoUpdater] Launching app...');
   console.log('[AutoUpdater] =================================================');
   if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Launching...', 100);
+    updateSplashStatus('Launching...', 100, true);
     setTimeout(() => {
       if (splashWindow && !splashWindow.isDestroyed()) {
         splashWindow.close();
@@ -287,7 +326,7 @@ autoUpdater.on('download-progress', (progress) => {
   const percent = progress.percent;
   console.log(`[AutoUpdater] Download progress: ${percent.toFixed(1)}%`);
   if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus(`Downloading update...`, percent);
+    updateSplashStatus(`Downloading update...`, percent, false);
   }
 });
 
@@ -295,26 +334,38 @@ autoUpdater.on('update-downloaded', (info) => {
   console.log('[AutoUpdater] =================================================');
   console.log('[AutoUpdater] ✅ UPDATE DOWNLOADED!');
   console.log('[AutoUpdater] Downloaded version:', info.version);
-  console.log('[AutoUpdater] Update will be installed on restart');
-  console.log('[AutoUpdater] Waiting for user to click restart...');
+  console.log('[AutoUpdater] Installing update and restarting...');
   console.log('[AutoUpdater] =================================================');
   if (splashWindow && !splashWindow.isDestroyed()) {
-    // Show restart button instead of auto-restarting (Discord-style)
-    updateSplashStatus('Update ready!', 100, true);
+    // Show "Installing..." with spinner
+    updateSplashStatus('Installing update...', 100, true);
+
+    // Wait a moment to show the installing message, then quit and install
+    setTimeout(() => {
+      console.log('[AutoUpdater] Quitting and installing update...');
+      // Create flag to skip update check after restart
+      createUpdateFlag();
+      // Quit and install immediately - this will do a differential update (ASAR patching)
+      // NOT run the installer again
+      autoUpdater.quitAndInstall(false, true);
+    }, 1000);
   }
 });
 
 autoUpdater.on('error', (err) => {
-  console.error('[AutoUpdater] Update error:', err);
+  console.error('[AutoUpdater] =================================================');
+  console.error('[AutoUpdater] ❌ Update error:', err);
+  console.error('[AutoUpdater] Launching app anyway...');
+  console.error('[AutoUpdater] =================================================');
   if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Launching...', 100);
+    updateSplashStatus('Launching...', 100, true);
     setTimeout(() => {
       if (splashWindow && !splashWindow.isDestroyed()) {
         splashWindow.close();
         splashWindow = null;
       }
       createWindow();
-    }, 500);
+    }, 1000);
   } else {
     createWindow();
   }
