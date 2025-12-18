@@ -64,15 +64,15 @@ export default function SettingsPanel() {
   });
 
   const [hyperbeamSettings, setHyperbeamSettings] = useState<HyperbeamSettings>({
-    kiosk: true,
+    kiosk: false,  // Premium feature - disabled by default
     dark: true,
     webgl: true,
     adblock: true,
     draw: false,
-    useTag: true,  // Enable session reuse by default
+    useTag: false,  // Premium feature - disabled by default
     resolution: '720p',  // Default to 720p (standard)
     fps: 30,
-    region: 'AS',  // Default to Asia for Indian users
+    region: 'NA',  // Default to North America (Hyperbeam has no sessions in Asia)
     quality: 'smooth',
   });
 
@@ -779,7 +779,7 @@ export default function SettingsPanel() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Version</span>
-            <Badge variant="secondary" className="text-xs">1.3.1</Badge>
+            <Badge variant="secondary" className="text-xs">1.3.2</Badge>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Built with</span>
