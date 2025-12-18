@@ -8,28 +8,40 @@ import type { ServerMessage } from '@/types/messages';
  * SimplePeer Configuration
  * Using the same STUN/TURN servers as before
  */
-const ICE_SERVERS: RTCIceServer[] = [
-  // STUN servers for NAT discovery
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  // Primary TURN server with TCP/TLS fallbacks
-  {
-    urls: [
-      'turn:relay1.expressturn.com:3478',
-      'turn:relay1.expressturn.com:80?transport=tcp',
-      'turns:relay1.expressturn.com:443?transport=tcp',
-    ],
-    username: 'efPU52K4SLOQ34W2QY',
-    credential: '1TJPNFxHKXr7feIz',
-  },
-  // Fallback TURN server
-  {
+// Build ICE servers configuration with environment variable support
+const buildIceServers = (): RTCIceServer[] => {
+  const servers: RTCIceServer[] = [
+    // STUN servers for NAT discovery
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+  ];
+
+  // Add custom TURN server if credentials are provided via environment variables
+  const customTurnUrl = import.meta.env.VITE_TURN_SERVER_URL;
+  const customTurnUser = import.meta.env.VITE_TURN_SERVER_USERNAME;
+  const customTurnCred = import.meta.env.VITE_TURN_SERVER_CREDENTIAL;
+
+  if (customTurnUrl && customTurnUser && customTurnCred) {
+    console.log('[SimplePeer] Using custom TURN server from environment');
+    servers.push({
+      urls: customTurnUrl,
+      username: customTurnUser,
+      credential: customTurnCred,
+    });
+  }
+
+  // Always add free public TURN servers as fallback
+  servers.push({
     urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
     username: 'openrelayproject',
     credential: 'openrelayproject',
-  },
-];
+  });
+
+  return servers;
+};
+
+const ICE_SERVERS: RTCIceServer[] = buildIceServers();
 
 /**
  * Connection state for tracking peer status
