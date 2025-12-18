@@ -146,18 +146,26 @@ function RoomScreenContent({ onLeaveRoom, onOpenSettings }: { onLeaveRoom?: () =
 
   // Fullscreen handler
   const handleFullscreenToggle = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-      }).catch(err => {
-        console.error('[Room] Fullscreen error:', err);
-      });
+    // Use Electron API if available (for desktop app), otherwise fall back to web API
+    if (window.electronAPI?.toggleFullscreen) {
+      window.electronAPI.toggleFullscreen();
+      // Toggle state locally (will be synced by fullscreenchange event)
+      setIsFullscreen(!isFullscreen);
     } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreen(false);
-      }).catch(err => {
-        console.error('[Room] Exit fullscreen error:', err);
-      });
+      // Web fallback for browser
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(() => {
+          setIsFullscreen(true);
+        }).catch(err => {
+          console.error('[Room] Fullscreen error:', err);
+        });
+      } else {
+        document.exitFullscreen().then(() => {
+          setIsFullscreen(false);
+        }).catch(err => {
+          console.error('[Room] Exit fullscreen error:', err);
+        });
+      }
     }
   };
 

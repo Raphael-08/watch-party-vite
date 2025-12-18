@@ -7,6 +7,8 @@ declare global {
       minimizeWindow: () => void;
       maximizeWindow: () => void;
       closeWindow: () => void;
+      restartApp: () => void;
+      toggleFullscreen: () => void;
     };
   }
 }

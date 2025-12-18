@@ -289,7 +289,7 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           </Card>
 
           <p className="text-center text-xs text-muted-foreground mt-6">
-            v1.2.9 • Watch Party
+            v1.3.0 • Watch Party
           </p>
         </div>
       </div>

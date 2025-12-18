@@ -6,7 +6,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electron', {
   send: (channel: string, ...args: any[]) => {
     // Whitelist of allowed channels
-    const validChannels = ['minimize-window', 'maximize-window', 'close-window', 'open-logs', 'check-updates', 'restart-app'];
+    const validChannels = ['minimize-window', 'maximize-window', 'close-window', 'open-logs', 'check-updates', 'restart-app', 'toggle-fullscreen'];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, ...args);
     }
@@ -19,4 +19,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximizeWindow: () => ipcRenderer.send('maximize-window'),
   closeWindow: () => ipcRenderer.send('close-window'),
   restartApp: () => ipcRenderer.send('restart-app'),
+  toggleFullscreen: () => ipcRenderer.send('toggle-fullscreen'),
 });

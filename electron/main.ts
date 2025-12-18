@@ -515,6 +515,13 @@ app.whenReady().then(() => {
     win?.close();
   });
 
+  ipcMain.on('toggle-fullscreen', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      win.setFullScreen(!win.isFullScreen());
+    }
+  });
+
   // Handle open logs folder request
   ipcMain.on('open-logs', () => {
     const logPath = log.transports.file.getFile().path;
