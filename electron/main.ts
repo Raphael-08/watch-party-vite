@@ -9,7 +9,7 @@ dotenv.config();
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 // Import ASAR updater for Discord-style updates
-const { autoUpdater } = require('electron-asar-hot-updater');
+const autoUpdater = require('electron-asar-hot-updater');
 
 // Configure ASAR auto-updater (true Discord-style - only updates app.asar)
 const updateServerUrl = 'https://raw.githubusercontent.com/Raphael-08/watch-party-vite/master/updates';
