@@ -110,7 +110,12 @@ export function useSimplePeer() {
     try {
       console.log('[SimplePeer] Requesting AUDIO-ONLY access...');
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // Add 10 second timeout to getUserMedia
+      const timeoutPromise = new Promise<MediaStream>((_, reject) => {
+        setTimeout(() => reject(new Error('getUserMedia timeout after 10 seconds')), 10000);
+      });
+
+      const getUserMediaPromise = navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -118,6 +123,8 @@ export function useSimplePeer() {
         },
         video: false, // Start with audio only
       });
+
+      const stream = await Promise.race([getUserMediaPromise, timeoutPromise]);
 
       console.log('[SimplePeer] ✅ Audio access granted');
 
@@ -137,6 +144,8 @@ export function useSimplePeer() {
         } else if (err.name === 'NotReadableError') {
           setError('Microphone is already in use by another application.');
         }
+      } else if (err instanceof Error && err.message.includes('timeout')) {
+        setError('Microphone access timed out. Please check your device and try again.');
       }
 
       throw err;
