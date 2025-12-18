@@ -1,7 +1,7 @@
 {
   "name": "watch-party-vite",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.3.1",
   "author": "Your Name",
   "description": "Watch videos together in sync with friends",
   "main": "dist-electron/main.js",
@@ -34,7 +34,6 @@
         "provider": "github",
         "owner": "Raphael-08",
         "repo": "watch-party-vite",
-        "private": true,
         "releaseType": "release"
       }
     ],

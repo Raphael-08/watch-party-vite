@@ -27,31 +27,16 @@ console.log('[AutoUpdater] Is packaged:', app.isPackaged);
 console.log('[AutoUpdater] Platform:', process.platform);
 console.log('[AutoUpdater] =================================================');
 
-// IMPORTANT: For private GitHub repositories, electron-updater needs authentication
-// Use the valid token from .env file
-const GITHUB_TOKEN = process.env.GH_TOKEN || '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';
+// Configure GitHub provider for public repository
+// No authentication needed for public repos
+autoUpdater.setFeedURL({
+  provider: 'github',
+  owner: 'Raphael-08',
+  repo: 'watch-party-vite',
+});
 
-// Configure GitHub provider with authentication for private repository
-if (GITHUB_TOKEN) {
-  // Set up GitHub provider with token
-  autoUpdater.requestHeaders = {
-    'Authorization': `token ${GITHUB_TOKEN}`
-  };
-
-  // Configure to use GitHub API instead of releases.atom for private repos
-  autoUpdater.setFeedURL({
-    provider: 'github',
-    owner: 'Raphael-08',
-    repo: 'watch-party-vite',
-    private: true,
-    token: GITHUB_TOKEN
-  });
-
-  console.log('[AutoUpdater] ✓ GitHub provider configured with authentication');
-  console.log('[AutoUpdater] ✓ Private repository mode enabled');
-} else {
-  console.warn('[AutoUpdater] ⚠️  No GitHub token - updates will fail for private repos');
-}
+console.log('[AutoUpdater] ✓ GitHub provider configured (public repository)');
+console.log('[AutoUpdater] Repository: Raphael-08/watch-party-vite');
 
 let splashWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
