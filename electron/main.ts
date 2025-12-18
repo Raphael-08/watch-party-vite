@@ -9,16 +9,10 @@ dotenv.config();
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 // Import ASAR updater for Discord-style updates
-const autoUpdater = require('electron-asar-hot-updater');
+const EAU = require('electron-asar-hot-updater');
 
-// Configure ASAR auto-updater (true Discord-style - only updates app.asar)
-const updateServerUrl = 'https://raw.githubusercontent.com/Raphael-08/watch-party-vite/master/updates';
-
-autoUpdater.setFeedURL({
-  api: updateServerUrl,
-  repo: 'Raphael-08/watch-party-vite',
-  current: app.getVersion()
-});
+// Update server configuration
+const updateServerUrl = 'https://raw.githubusercontent.com/Raphael-08/watch-party-vite/master/updates/update.json';
 
 console.log('[AutoUpdater] =================================================');
 console.log('[AutoUpdater] Initializing ASAR hot updater (Discord-style)');
@@ -251,94 +245,120 @@ function updateSplashStatus(status: string, progress?: number, showSpinner = tru
   `);
 }
 
-// ASAR Auto-updater event handlers (simplified - no installer needed!)
-autoUpdater.on('checking-for-update', () => {
+// Function to check for ASAR updates using EAU
+function checkForUpdates() {
   console.log('[AutoUpdater] =================================================');
   console.log('[AutoUpdater] 🔍 Checking for ASAR updates...');
   console.log('[AutoUpdater] Current version:', app.getVersion());
   console.log('[AutoUpdater] =================================================');
+
   if (splashWindow && !splashWindow.isDestroyed()) {
     updateSplashStatus('Checking for updates...', undefined, true);
   }
-});
 
-autoUpdater.on('update-available', () => {
-  console.log('[AutoUpdater] =================================================');
-  console.log('[AutoUpdater] ✅ UPDATE AVAILABLE!');
-  console.log('[AutoUpdater] Starting ASAR download...');
-  console.log('[AutoUpdater] =================================================');
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Downloading update...', 0, false);
-  }
-});
+  // Initialize EAU
+  EAU.init({
+    api: updateServerUrl,
+    server: false, // Client-side version comparison
+    debug: true
+  });
 
-autoUpdater.on('update-not-available', () => {
-  console.log('[AutoUpdater] =================================================');
-  console.log('[AutoUpdater] ℹ️  No updates available');
-  console.log('[AutoUpdater] Current version:', app.getVersion());
-  console.log('[AutoUpdater] Launching app...');
-  console.log('[AutoUpdater] =================================================');
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Launching...', 100, true);
-    setTimeout(() => {
+  // Check for updates
+  EAU.check((error: Error | null, last: any, body: any) => {
+    if (error) {
+      console.error('[AutoUpdater] ❌ Update check error:', error);
+      console.error('[AutoUpdater] Launching app anyway...');
       if (splashWindow && !splashWindow.isDestroyed()) {
-        splashWindow.close();
-        splashWindow = null;
+        updateSplashStatus('Launching...', 100, true);
+        setTimeout(() => {
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
+          createWindow();
+        }, 500);
+      } else {
+        createWindow();
       }
-      createWindow();
-    }, 500);
-  } else {
-    createWindow();
-  }
-});
+      return;
+    }
 
-autoUpdater.on('download-progress', (progressObj: any) => {
-  const percent = progressObj.percent || 0;
-  console.log(`[AutoUpdater] Download progress: ${percent.toFixed(1)}%`);
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Downloading update...', percent, false);
-  }
-});
-
-autoUpdater.on('update-downloaded', () => {
-  console.log('[AutoUpdater] =================================================');
-  console.log('[AutoUpdater] ✅ UPDATE DOWNLOADED!');
-  console.log('[AutoUpdater] Installing ASAR and restarting (no installer!)...');
-  console.log('[AutoUpdater] =================================================');
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Installing update...', 100, true);
-  }
-
-  // Create flag to skip update check after restart
-  createUpdateFlag();
-
-  // ASAR updater will automatically replace app.asar and restart
-  // Much simpler than NSIS installer - just restart the app!
-  setTimeout(() => {
-    console.log('[AutoUpdater] Restarting app with new ASAR...');
-    app.relaunch();
-    app.exit(0);
-  }, 1500);
-});
-
-autoUpdater.on('error', (err: Error) => {
-  console.error('[AutoUpdater] =================================================');
-  console.error('[AutoUpdater] ❌ Update error:', err);
-  console.error('[AutoUpdater] Launching app anyway...');
-  console.error('[AutoUpdater] =================================================');
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    updateSplashStatus('Launching...', 100, true);
-    setTimeout(() => {
+    if (!last) {
+      // No update available
+      console.log('[AutoUpdater] ℹ️  No updates available');
+      console.log('[AutoUpdater] Launching app...');
       if (splashWindow && !splashWindow.isDestroyed()) {
-        splashWindow.close();
-        splashWindow = null;
+        updateSplashStatus('Launching...', 100, true);
+        setTimeout(() => {
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
+          createWindow();
+        }, 500);
+      } else {
+        createWindow();
       }
-      createWindow();
-    }, 1000);
-  } else {
-    createWindow();
-  }
-});
+      return;
+    }
+
+    // Update available
+    console.log('[AutoUpdater] ✅ UPDATE AVAILABLE!');
+    console.log('[AutoUpdater] New version:', body.version);
+    console.log('[AutoUpdater] Starting ASAR download...');
+
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      updateSplashStatus('Downloading update...', 0, false);
+    }
+
+    // Download the update
+    EAU.progress((state: any) => {
+      const percent = state.percent || 0;
+      console.log(`[AutoUpdater] Download progress: ${percent.toFixed(1)}%`);
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        updateSplashStatus('Downloading update...', percent, false);
+      }
+    });
+
+    EAU.download((error: Error | null) => {
+      if (error) {
+        console.error('[AutoUpdater] ❌ Download error:', error);
+        console.error('[AutoUpdater] Launching app anyway...');
+        if (splashWindow && !splashWindow.isDestroyed()) {
+          updateSplashStatus('Launching...', 100, true);
+          setTimeout(() => {
+            if (splashWindow && !splashWindow.isDestroyed()) {
+              splashWindow.close();
+              splashWindow = null;
+            }
+            createWindow();
+          }, 500);
+        } else {
+          createWindow();
+        }
+        return;
+      }
+
+      // Update downloaded successfully
+      console.log('[AutoUpdater] ✅ UPDATE DOWNLOADED!');
+      console.log('[AutoUpdater] Installing ASAR and restarting...');
+
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        updateSplashStatus('Installing update...', 100, true);
+      }
+
+      // Create flag to skip update check after restart
+      createUpdateFlag();
+
+      // Restart the app with new ASAR
+      setTimeout(() => {
+        console.log('[AutoUpdater] Restarting app with new ASAR...');
+        app.relaunch();
+        app.exit(0);
+      }, 1500);
+    });
+  });
+}
 
 // Register custom protocol before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -448,17 +468,7 @@ app.whenReady().then(() => {
       createSplashWindow();
       // Check for ASAR updates after splash window is ready
       setTimeout(() => {
-        autoUpdater.check((err: Error | null) => {
-          if (err) {
-            console.error('[AutoUpdater] Failed to check for updates:', err);
-            // On error, close splash and launch app
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
-            createWindow();
-          }
-        });
+        checkForUpdates();
       }, 1000);
     }
   } else {
@@ -503,20 +513,15 @@ app.whenReady().then(() => {
   // Handle check for updates manually
   ipcMain.on('check-updates', () => {
     console.log('[AutoUpdater] Manual update check requested');
-    autoUpdater.check((err: Error | null) => {
-      if (err) {
-        console.error('[AutoUpdater] Manual update check failed:', err);
-      }
-    });
+    checkForUpdates();
   });
 
   // Handle restart to install update (from splash window)
   ipcMain.on('restart-app', () => {
     console.log('[AutoUpdater] User clicked restart button');
-    console.log('[AutoUpdater] Quitting and installing update...');
-    // Create flag to skip update check after restart
-    createUpdateFlag();
-    autoUpdater.quitAndInstall(false, true);
+    console.log('[AutoUpdater] Restarting app...');
+    app.relaunch();
+    app.exit(0);
   });
 
   app.on('activate', () => {
