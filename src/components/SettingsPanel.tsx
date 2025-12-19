@@ -64,15 +64,15 @@ export default function SettingsPanel() {
   });
 
   const [hyperbeamSettings, setHyperbeamSettings] = useState<HyperbeamSettings>({
-    kiosk: true,
+    kiosk: false,
     dark: true,
     webgl: true,
-    adblock: true,
+    adblock: false,
     draw: false,
-    useTag: true,  // Enable session reuse by default
+    useTag: false,  // Disable session reuse by default (test mode)
     resolution: '720p',  // Default to 720p (standard)
     fps: 30,
-    region: 'AS',  // Default to Asia for Indian users
+    region: 'NA',  // Default to North America (better availability)
     quality: 'smooth',
   });
 
