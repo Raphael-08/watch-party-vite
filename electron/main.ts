@@ -396,6 +396,29 @@ app.whenReady().then(() => {
     win?.close();
   });
 
+  ipcMain.on('toggle-fullscreen', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      win.setFullScreen(!win.isFullScreen());
+    }
+  });
+
+  ipcMain.handle('is-fullscreen', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return win?.isFullScreen() || false;
+  });
+
+  // Listen for fullscreen state changes and notify renderer
+  if (mainWindow) {
+    mainWindow.on('enter-full-screen', () => {
+      mainWindow?.webContents.send('fullscreen-changed', true);
+    });
+
+    mainWindow.on('leave-full-screen', () => {
+      mainWindow?.webContents.send('fullscreen-changed', false);
+    });
+  }
+
   // Handle open logs folder request
   ipcMain.on('open-logs', () => {
     const logPath = log.transports.file.getFile().path;

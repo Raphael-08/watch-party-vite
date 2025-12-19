@@ -146,23 +146,44 @@ function RoomScreenContent({ onLeaveRoom, onOpenSettings }: { onLeaveRoom?: () =
 
   // Fullscreen handler
   const handleFullscreenToggle = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-      }).catch(err => {
-        console.error('[Room] Fullscreen error:', err);
-      });
+    // Use Electron API if available (Electron app)
+    if (window.electronAPI?.toggleFullscreen) {
+      window.electronAPI.toggleFullscreen();
+      // Update state after a short delay to let Electron finish the transition
+      setTimeout(async () => {
+        if (window.electronAPI?.isFullscreen) {
+          const fullscreenState = await window.electronAPI.isFullscreen();
+          setIsFullscreen(fullscreenState);
+        }
+      }, 100);
     } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreen(false);
-      }).catch(err => {
-        console.error('[Room] Exit fullscreen error:', err);
-      });
+      // Fall back to web Fullscreen API (browser)
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(() => {
+          setIsFullscreen(true);
+        }).catch(err => {
+          console.error('[Room] Fullscreen error:', err);
+        });
+      } else {
+        document.exitFullscreen().then(() => {
+          setIsFullscreen(false);
+        }).catch(err => {
+          console.error('[Room] Exit fullscreen error:', err);
+        });
+      }
     }
   };
 
   // Listen for fullscreen changes
   useEffect(() => {
+    // Listen for Electron fullscreen changes
+    if (window.electronAPI?.onFullscreenChange) {
+      window.electronAPI.onFullscreenChange((isFullscreen) => {
+        setIsFullscreen(isFullscreen);
+      });
+    }
+
+    // Also listen for web fullscreen changes (for browser)
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };

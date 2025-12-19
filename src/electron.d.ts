@@ -7,6 +7,9 @@ declare global {
       minimizeWindow: () => void;
       maximizeWindow: () => void;
       closeWindow: () => void;
+      toggleFullscreen: () => void;
+      isFullscreen: () => Promise<boolean>;
+      onFullscreenChange: (callback: (isFullscreen: boolean) => void) => void;
     };
   }
 }
