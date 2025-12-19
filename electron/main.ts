@@ -26,31 +26,16 @@ console.log('[AutoUpdater] Is packaged:', app.isPackaged);
 console.log('[AutoUpdater] Platform:', process.platform);
 console.log('[AutoUpdater] =================================================');
 
-// IMPORTANT: For private GitHub repositories, electron-updater needs authentication
-// Use the valid token from .env file
-const GITHUB_TOKEN = process.env.GH_TOKEN || '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';
+// Configure GitHub provider for public repository (no authentication needed)
+autoUpdater.setFeedURL({
+  provider: 'github',
+  owner: 'Raphael-08',
+  repo: 'watch-party-vite',
+  private: false, // Public repository
+});
 
-// Configure GitHub provider with authentication for private repository
-if (GITHUB_TOKEN) {
-  // Set up GitHub provider with token
-  autoUpdater.requestHeaders = {
-    'Authorization': `token ${GITHUB_TOKEN}`
-  };
-
-  // Configure to use GitHub API instead of releases.atom for private repos
-  autoUpdater.setFeedURL({
-    provider: 'github',
-    owner: 'Raphael-08',
-    repo: 'watch-party-vite',
-    private: true,
-    token: GITHUB_TOKEN
-  });
-
-  console.log('[AutoUpdater] ✓ GitHub provider configured with authentication');
-  console.log('[AutoUpdater] ✓ Private repository mode enabled');
-} else {
-  console.warn('[AutoUpdater] ⚠️  No GitHub token - updates will fail for private repos');
-}
+console.log('[AutoUpdater] ✓ GitHub provider configured for public repository');
+console.log('[AutoUpdater] ✓ Auto-updates enabled');
 
 let splashWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -356,7 +341,7 @@ app.whenReady().then(() => {
   console.log('Session is persistent:', ses.isPersistent());
   console.log('Session storage path:', ses.getStoragePath());
 
-  // In production, show splash and check for updates (Discord-style)
+  // In production, show splash and check for updates
   if (!isDev) {
     createSplashWindow();
     // Check for updates after splash window is ready
@@ -372,7 +357,7 @@ app.whenReady().then(() => {
       });
     }, 1000);
   } else {
-    // In development, launch directly
+    // In development - launch directly
     createWindow();
   }
 
